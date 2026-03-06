@@ -13,8 +13,10 @@ class RationsPosition:
     """Eine Komponente in der Ration."""
     futtermittel_id: int
     name: str
-    menge_kg: float          # Frischmasse in kg
+    menge_kg: float          # Frischmasse in kg (nach Verlustabzug = aufgenommene Menge)
     wassergehalt_pct: float  # Wassergehalt in %
+    menge_verabreicht_kg: float = 0.0   # tatsächlich vorgelegte Menge (vor Verlust)
+    verlust_pct: float = 0.0            # Verlust in % (Fress-/Liegeverlust)
 
     # Nährwerte pro kg TS (aus Datenbank)
     energie_mj_me: float = 0.0
