@@ -139,121 +139,189 @@ Inno Setup → einzelne Input-`.exe` → Output: `Rationsrechner_Setup_v1.0.exe`
 
 ## Phase 4 — Daten & Integration (Q4 2026 / 2027)
 
-### 4.1 Labor-Import — Futtermittelanalyse aus CSV/Excel
+### 4.1 Blutbild-Import (Laboklin / IDEXX)
 
 #### Ziel
-Analyseergebnisse akkreditierter Futtermittellabore (LUFA, AGES, SGS, Eurofins …)
-direkt als neues Futtermittel importieren — ohne manuelle Abtippen-Fehler.
+Tierärztliche Blutbefunde direkt einlesen und automatisch mit dem ernährungsphysiologischen
+Versorgungszustand des Pferdes verknüpfen. Mangelzustände oder Überversorgungen werden
+erkannt und der **Optimierungsassistent** reagiert mit konkreten Fütterungsanpassungen.
 
-#### Unterstützte Quellformate
+#### Unterstützte Labor-Quellen (Phase 1)
 
-| Format | Beschreibung |
-|---|---|
-| CSV (Semikolon/Komma) | Generischer Rohdaten-Export der meisten Labore |
-| XLSX | Excel-Analysebericht (häufig von LUFA Nord-West, AGES Wien) |
-| PDF (Fallback) | Vorhandenes OCR-Modul (`ocr_import.py`) als Rückfall wenn kein strukturierter Export |
-
-#### Importierbare Felder (Mapping → `futtermittel`-Tabelle)
-
-| Labor-Bezeichnung (Beispiele) | DB-Feld | Einheit |
+| Labor | Export-Format | Erkennungsmerkmal |
 |---|---|---|
-| Trockensubstanz / TS / DM | `wassergehalt_pct` (= 100 − TS) | % |
-| Metabolisierbare Energie / ME | `energie_mj_me` | MJ/kg TS |
-| Rohprotein / XP / Crude Protein | `rohprotein_pct` | % TS |
-| Lysin | `lysin_g` | g/kg TS |
-| Rohfett / XL | `rohfett_pct` | % TS |
-| Rohfaser / XF | `rohfaser_pct` | % TS |
-| Stärke / Starch | `staerke_pct` | % TS |
-| Zucker / Zucker gesamt / ESC+WSC | `zucker_pct` | % TS |
-| Calcium / Ca | `calcium_g` | g/kg TS |
-| Phosphor / P | `phosphor_g` | g/kg TS |
-| Magnesium / Mg | `magnesium_g` | g/kg TS |
-| Natrium / Na | `natrium_g` | g/kg TS |
-| Kalium / K | `kalium_g` | g/kg TS |
-| Eisen / Fe | `eisen_mg` | mg/kg TS |
-| Kupfer / Cu | `kupfer_mg` | mg/kg TS |
-| Zink / Zn | `zink_mg` | mg/kg TS |
-| Mangan / Mn | `mangan_mg` | mg/kg TS |
-| Selen / Se | `selen_mg` | mg/kg TS |
-| Jod / I | `jod_mg` | mg/kg TS |
-| Vitamin E / α-Tocopherol | `vit_e_mg` | mg/kg TS |
+| **Laboklin** (Bad Kissingen) | PDF-Befundbericht | Kopfzeile „LABOKLIN", Tabelle mit Analyt / Ergebnis / Referenz |
+| **IDEXX Laboratories** | PDF + optional CSV | Kopfzeile „IDEXX", ähnliche Tabellenstruktur |
+| Generisch | CSV (Semikolon) | Spalten: Analyt, Wert, Einheit, Referenz_min, Referenz_max |
+
+#### Relevante Blutparameter für die Fütterungsberatung
+
+| Blutparameter | Einheit | Bezug zur Fütterung |
+|---|---|---|
+| Selen (Se, Vollblut) | µg/l | Direkt → `selen_mg` Bedarf; enge therapeutische Breite |
+| Glutathionperoxidase (GPX) | U/gHb | Indirekter Se-Status; sensitiver als Serum-Se |
+| Kupfer (Cu, Serum) | µmol/l | → `kupfer_mg`; Antagonismus mit Zink/Eisen/Molybdän |
+| Zink (Zn, Serum) | µmol/l | → `zink_mg`; Wechselwirkung Kupfer |
+| Eisen (Fe, Serum) | µmol/l | → `eisen_mg`; Eisenüberschuss hemmt Cu-Resorption |
+| Magnesium (Mg, Serum) | mmol/l | → `magnesium_g`; relevant bei EMS/PPID |
+| Calcium (Ca, Serum) | mmol/l | → `calcium_g`; im Kontext Trächtigkeit/Laktation |
+| Vitamin E (α-Tocopherol) | µmol/l | → `vit_e_mg`; Oxidativer Stress, Muskelgesundheit |
+| Vitamin A (Retinol) | µmol/l | → `vit_a_ie`; bei Weidemangel oder Lagerungsheu |
+| Schilddrüse T3/T4 | nmol/l | Hinweis auf Jodversorgung (indirekt) |
+| ACTH | pg/ml | PPID-Screening → Diagnose „Cushing" vorschlagen |
+| Insulin (basales Insulin) | µU/ml | EMS-Marker → Diagnoseflag setzen |
+
+#### Referenzbereiche
+
+Laboklin/IDEXX liefern eigene Referenzen im Bericht mit.
+Die App nutzt diese **laboreigenen Referenzen** als primäre Quelle.
+Fallback: integrierte GfE/eigene Normwerte in `blutbild_referenz.json`.
+
+```json
+{
+  "selen_vollblut_ug_l":    { "min": 120, "max": 250, "einheit": "µg/l" },
+  "kupfer_serum_umol_l":    { "min": 12,  "max": 22,  "einheit": "µmol/l" },
+  "zink_serum_umol_l":      { "min": 10,  "max": 18,  "einheit": "µmol/l" },
+  "vit_e_umol_l":           { "min": 4.0, "max": 20.0, "einheit": "µmol/l" },
+  "magnesium_serum_mmol_l": { "min": 0.7, "max": 1.1,  "einheit": "mmol/l" }
+}
+```
+
+#### Bewertungslogik: Blut → Versorgungszustand
+
+```
+Wert < Referenz_min × 0.85  → "Mangel"       (rot)
+Wert < Referenz_min         → "Grenzwertig"   (orange)
+Referenz_min ≤ Wert ≤ max   → "Optimal"       (grün)
+Wert > Referenz_max × 1.15  → "Überversorgung" (lila)
+```
+
+Sonderregel **Selen**: Toleranzbereich besonders eng —
+`> 300 µg/l` Vollblut → Toxizitätswarnung, Supplement-Empfehlung blockiert.
+
+#### Verknüpfung mit dem Optimierungsassistenten
+
+Blutbefunde werden als **pferdespezifische Constraints** gespeichert und beim nächsten
+Aufruf des Optimierungsassistenten automatisch eingeblendet:
+
+```
+blutbefund_status = {
+  "selen":   "Mangel",       → Supplement-Vorschlag: Selenomethionin
+  "kupfer":  "Optimal",      → kein Eingriff
+  "vit_e":   "Grenzwertig",  → Hinweis: Vitamin-E-Supplement erwägen
+  "insulin": 45,             → Flag EMS automatisch setzen (wenn > 40 µU/ml)
+  "acth":    112,            → Flag Cushing vorschlagen (wenn > 80 pg/ml saisonal adj.)
+}
+```
+
+Der Optimierungsassistent priorisiert Supplemente, die einen dokumentierten
+Mangel beheben — und sperrt Supplemente, die eine Überversorgung verschlechtern würden.
 
 #### Architektur
 
 ```
-labor_import.py              ← neues Modul
-  parse_csv(pfad) → dict
-  parse_xlsx(pfad) → dict
-  normalisiere_felder(roh) → dict   ← Alias-Mapping + Einheiten-Umrechnung
-  validiere(daten) → list[str]      ← Warnungen bei unplausiblen Werten
-  als_futtermittel(daten) → dict    ← bereit für database.speichere_futtermittel()
+blutbild_import.py                  ← neues Modul
+  erkenne_labor(pfad) → "laboklin" | "idexx" | "generisch"
+  parse_laboklin_pdf(pfad) → list[BlutWert]
+  parse_idexx_pdf(pfad) → list[BlutWert]
+  parse_csv(pfad) → list[BlutWert]
+  bewerte(werte, referenzen) → list[BlutBewertung]
+  als_pferd_constraints(bewertungen) → dict   ← für Optimierungsassistent
 
-views/labor_import_view.py   ← Dialog (QDialog)
-  Schritt 1: Datei auswählen (CSV/XLSX/PDF)
-  Schritt 2: Vorschau-Tabelle — gemappte Felder + nicht erkannte Zeilen
-  Schritt 3: Fehlende Felder manuell ergänzen
-  Schritt 4: Name / Kategorie / Quelle bestätigen → Speichern
+@dataclass
+class BlutWert:
+    analyt: str          # z.B. "Selen"
+    wert: float
+    einheit: str
+    ref_min: float | None
+    ref_max: float | None
+    datum: str
+
+@dataclass
+class BlutBewertung:
+    blut_wert: BlutWert
+    status: str          # "Mangel" | "Grenzwertig" | "Optimal" | "Überversorgung"
+    db_feld: str | None  # Zugeordnetes Nährstofffeld, z.B. "selen_mg"
+    empfehlung: str      # Freitext-Hinweis
+
+views/blutbild_view.py              ← neuer Tab / Dialog
+  Schritt 1: PDF oder CSV auswählen
+  Schritt 2: Erkannte Werte + Ampelfarben anzeigen
+  Schritt 3: Datum + Tierarzt/Labor speichern
+  Schritt 4: "Optimierungsassistent öffnen" → Constraints übernehmen
 ```
 
-#### Normalisierungs-Logik (`normalisiere_felder`)
+#### Datenbank-Erweiterung
 
-1. **Alias-Dictionary** — bekannte Laborbezeichnungen → DB-Feldname  
-   (erweiterbar per JSON-Konfigurationsdatei `labor_aliase.json`)
-2. **Einheiten-Erkennung** — automatische Umrechnung:
-   - `% FM → % TS` anhand der TS-Angabe
-   - `g/kg FM → g/kg TS`
-   - `mg/kg FM → mg/kg TS`
-3. **ME-Schätzung** falls nicht angegeben:  
-   `ME ≈ 0.95 × (Rohprotein×0.134 + Rohfett×0.200 + NfE×0.143 + Rohfaser×0.076)`  
-   (GfE-Schätzgleichung für Pferde, als Hinweis markiert)
+```sql
+CREATE TABLE IF NOT EXISTS blutbefunde (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    pferd_id     INTEGER NOT NULL REFERENCES pferde(id) ON DELETE CASCADE,
+    datum        TEXT NOT NULL,
+    labor        TEXT,          -- Laboklin | IDEXX | Sonstige
+    tierarzt     TEXT,
+    erstellt_am  TEXT DEFAULT (datetime('now'))
+);
 
-#### Validierungsregeln (Plausibilitätsprüfung)
-
-| Feld | Untergrenze | Obergrenze | Warnung |
-|---|---|---|---|
-| `energie_mj_me` | 3.0 | 16.0 | MJ/kg TS außerhalb Normalbereich |
-| `rohprotein_pct` | 2.0 | 40.0 | — |
-| `calcium_g` | 0.1 | 30.0 | — |
-| `selen_mg` | 0.01 | 2.0 | Selen-Toxizitätsrisiko bei > 2 mg/kg TS |
-| `wassergehalt_pct` | 5.0 | 80.0 | — |
-| Ca:P-Verhältnis | 1.0 | 6.0 | Umgekehrtes Verhältnis kritisch |
-
-Validierungsfehler → orange hervorgehobene Zeilen in der Vorschau,  
-kein Abbruch — Benutzer entscheidet selbst.
-
-#### Erweiterungspunkt: `labor_aliase.json`
-
-```json
-{
-  "Trockensubstanz": "wassergehalt_pct",
-  "TS": "wassergehalt_pct",
-  "Dry Matter": "wassergehalt_pct",
-  "ME Pferd": "energie_mj_me",
-  "XP": "rohprotein_pct",
-  "Crude Protein": "rohprotein_pct",
-  "WSC+ESC": "zucker_pct"
-}
+CREATE TABLE IF NOT EXISTS blutbefund_werte (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    befund_id       INTEGER NOT NULL REFERENCES blutbefunde(id) ON DELETE CASCADE,
+    analyt          TEXT NOT NULL,
+    wert            REAL NOT NULL,
+    einheit         TEXT,
+    ref_min         REAL,
+    ref_max         REAL,
+    status          TEXT,       -- Mangel | Grenzwertig | Optimal | Überversorgung
+    db_feld         TEXT        -- Mapping zu Nährstoff-Feld
+);
 ```
 
-Datei liegt neben der `.exe` → Labore mit abweichenden Spaltenköpfen  
-können ohne Code-Änderung ergänzt werden.
+#### Verlaufsansicht
+
+Mehrere Befunde desselben Pferdes → Trendanzeige:
+- Selen-Verlauf über 12 Monate nach Supplementierung
+- Visueller Nachweis der Fütterungswirksamkeit
 
 #### Abhängigkeiten
 
 | Paket | Verwendung |
 |---|---|
-| `openpyxl` | bereits installiert (XLSX-Export) — für XLSX-Import wiederverwenden |
-| `csv` | stdlib, kein Zusatzpaket |
-| `reportlab` / `ocr_import.py` | PDF-Fallback (optional, nur wenn reportlab+easyocr vorhanden) |
+| `pdfplumber` oder `pymupdf` | PDF-Tabellen strukturiert auslesen (besser als OCR) |
+| `csv` | stdlib |
+| `reportlab` | bereits vorhanden — für Befund-Export-PDF |
+
+> **Hinweis zu `pdfplumber` vs. OCR:** Laboklin/IDEXX-PDFs sind
+> maschinenlesbare PDFs (kein Scan) → `pdfplumber` extrahiert Tabellen
+> direkt ohne OCR-Fehler. OCR (`ocr_import.py`) nur als Fallback bei
+> eingescannten Altbefunden.
 
 ---
 
-### 4.2 OCR-Import ausbauen
+### 4.2 Futtermittelanalyse-Import (LUFA / AGES / Eurofins)
 
-Vorhandenes `ocr_import.py` (EasyOCR + OpenCV) zum vollwertigen Import-Pfad ausbauen:
-- Erkannte Felder direkt in den Labor-Import-Dialog (4.1) übergeben
-- Qualitätsscore je Feld anzeigen (OCR-Konfidenz)
-- Manuelle Korrektur unsicherer Werte vor dem Speichern
+Analyseergebnisse akkreditierter Futtermittellabore direkt als neues Futtermittel importieren.
+
+#### Unterstützte Formate: CSV, XLSX, PDF (OCR-Fallback)
+
+#### Importierbare Felder (Mapping → `futtermittel`-Tabelle)
+
+| Labor-Bezeichnung | DB-Feld | Einheit |
+|---|---|---|
+| Trockensubstanz / TS / DM | `wassergehalt_pct` (= 100 − TS) | % |
+| Metabolisierbare Energie / ME | `energie_mj_me` | MJ/kg TS |
+| Rohprotein / XP | `rohprotein_pct` | % TS |
+| Rohfaser / XF | `rohfaser_pct` | % TS |
+| Stärke / Starch | `staerke_pct` | % TS |
+| Zucker / ESC+WSC | `zucker_pct` | % TS |
+| Calcium / Ca | `calcium_g` | g/kg TS |
+| Phosphor / P | `phosphor_g` | g/kg TS |
+| Kupfer / Cu | `kupfer_mg` | mg/kg TS |
+| Selen / Se | `selen_mg` | mg/kg TS |
+| … (alle Felder analog zu 4.1) | | |
+
+Alias-Mapping erweiterbar per `labor_aliase.json` (kein Code-Eingriff nötig).
+
+#### Architektur: `labor_import.py` + `views/labor_import_view.py` (3-Schritt-Wizard)
 
 ---
 
