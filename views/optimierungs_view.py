@@ -163,7 +163,7 @@ class OptimierungsDialog(QDialog):
         tbl.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         tbl.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         tbl.verticalHeader().setVisible(False)
-        tbl.verticalHeader().setDefaultSectionSize(24)
+        tbl.verticalHeader().setDefaultSectionSize(36)
         tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         tbl.setAlternatingRowColors(True)
@@ -447,7 +447,7 @@ class OptimierungsDialog(QDialog):
         self._var_tbl.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self._var_tbl.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self._var_tbl.verticalHeader().setVisible(False)
-        self._var_tbl.verticalHeader().setDefaultSectionSize(30)
+        self._var_tbl.verticalHeader().setDefaultSectionSize(36)
         self._var_tbl.setAlternatingRowColors(True)
         lo.addWidget(self._var_tbl, stretch=1)
 
@@ -518,7 +518,7 @@ class OptimierungsDialog(QDialog):
         self._vgl_tbl.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._vgl_tbl.setAlternatingRowColors(True)
         self._vgl_tbl.verticalHeader().setVisible(False)
-        self._vgl_tbl.verticalHeader().setDefaultSectionSize(24)
+        self._vgl_tbl.verticalHeader().setDefaultSectionSize(36)
         lo.addWidget(self._vgl_tbl, stretch=1)
 
         # Export
@@ -748,7 +748,7 @@ class OptimierungsDialog(QDialog):
         self._var_tbl.setItem(row, 1, name_item)
         self._var_tbl.setCellWidget(row, 2, spin)
         self._var_tbl.setCellWidget(row, 3, del_btn)
-        self._var_tbl.setRowHeight(row, 30)
+        self._var_tbl.setRowHeight(row, 36)
 
     def _var_zeile_loeschen(self, row: int):
         # Zeile nach aktuellem Index finden (falls sich Reihenfolge geändert hat)
