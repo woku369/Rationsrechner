@@ -139,11 +139,143 @@ Inno Setup → einzelne Input-`.exe` → Output: `Rationsrechner_Setup_v1.0.exe`
 
 ## Phase 4 — Daten & Integration (Q4 2026 / 2027)
 
-- [ ] **Labor-Import** — Futtermittelanalyse per CSV/Excel direkt importieren
-- [ ] **OCR-Import** (vorhandenes `ocr_import.py` ausbauen) — PDF-Analyseberichte einlesen
-- [ ] **Futtermittel-Datenbank-Update** über Online-Feed (JSON-Endpunkt, optional)
-- [ ] **Mehrsprachigkeit** — Deutsch / Englisch (Qt Linguist / `.ts`-Dateien)
-- [ ] **Cloud-Sync** (optional) — DB-Backup auf OneDrive / NAS per konfigurierbarem Pfad
+### 4.1 Labor-Import — Futtermittelanalyse aus CSV/Excel
+
+#### Ziel
+Analyseergebnisse akkreditierter Futtermittellabore (LUFA, AGES, SGS, Eurofins …)
+direkt als neues Futtermittel importieren — ohne manuelle Abtippen-Fehler.
+
+#### Unterstützte Quellformate
+
+| Format | Beschreibung |
+|---|---|
+| CSV (Semikolon/Komma) | Generischer Rohdaten-Export der meisten Labore |
+| XLSX | Excel-Analysebericht (häufig von LUFA Nord-West, AGES Wien) |
+| PDF (Fallback) | Vorhandenes OCR-Modul (`ocr_import.py`) als Rückfall wenn kein strukturierter Export |
+
+#### Importierbare Felder (Mapping → `futtermittel`-Tabelle)
+
+| Labor-Bezeichnung (Beispiele) | DB-Feld | Einheit |
+|---|---|---|
+| Trockensubstanz / TS / DM | `wassergehalt_pct` (= 100 − TS) | % |
+| Metabolisierbare Energie / ME | `energie_mj_me` | MJ/kg TS |
+| Rohprotein / XP / Crude Protein | `rohprotein_pct` | % TS |
+| Lysin | `lysin_g` | g/kg TS |
+| Rohfett / XL | `rohfett_pct` | % TS |
+| Rohfaser / XF | `rohfaser_pct` | % TS |
+| Stärke / Starch | `staerke_pct` | % TS |
+| Zucker / Zucker gesamt / ESC+WSC | `zucker_pct` | % TS |
+| Calcium / Ca | `calcium_g` | g/kg TS |
+| Phosphor / P | `phosphor_g` | g/kg TS |
+| Magnesium / Mg | `magnesium_g` | g/kg TS |
+| Natrium / Na | `natrium_g` | g/kg TS |
+| Kalium / K | `kalium_g` | g/kg TS |
+| Eisen / Fe | `eisen_mg` | mg/kg TS |
+| Kupfer / Cu | `kupfer_mg` | mg/kg TS |
+| Zink / Zn | `zink_mg` | mg/kg TS |
+| Mangan / Mn | `mangan_mg` | mg/kg TS |
+| Selen / Se | `selen_mg` | mg/kg TS |
+| Jod / I | `jod_mg` | mg/kg TS |
+| Vitamin E / α-Tocopherol | `vit_e_mg` | mg/kg TS |
+
+#### Architektur
+
+```
+labor_import.py              ← neues Modul
+  parse_csv(pfad) → dict
+  parse_xlsx(pfad) → dict
+  normalisiere_felder(roh) → dict   ← Alias-Mapping + Einheiten-Umrechnung
+  validiere(daten) → list[str]      ← Warnungen bei unplausiblen Werten
+  als_futtermittel(daten) → dict    ← bereit für database.speichere_futtermittel()
+
+views/labor_import_view.py   ← Dialog (QDialog)
+  Schritt 1: Datei auswählen (CSV/XLSX/PDF)
+  Schritt 2: Vorschau-Tabelle — gemappte Felder + nicht erkannte Zeilen
+  Schritt 3: Fehlende Felder manuell ergänzen
+  Schritt 4: Name / Kategorie / Quelle bestätigen → Speichern
+```
+
+#### Normalisierungs-Logik (`normalisiere_felder`)
+
+1. **Alias-Dictionary** — bekannte Laborbezeichnungen → DB-Feldname  
+   (erweiterbar per JSON-Konfigurationsdatei `labor_aliase.json`)
+2. **Einheiten-Erkennung** — automatische Umrechnung:
+   - `% FM → % TS` anhand der TS-Angabe
+   - `g/kg FM → g/kg TS`
+   - `mg/kg FM → mg/kg TS`
+3. **ME-Schätzung** falls nicht angegeben:  
+   `ME ≈ 0.95 × (Rohprotein×0.134 + Rohfett×0.200 + NfE×0.143 + Rohfaser×0.076)`  
+   (GfE-Schätzgleichung für Pferde, als Hinweis markiert)
+
+#### Validierungsregeln (Plausibilitätsprüfung)
+
+| Feld | Untergrenze | Obergrenze | Warnung |
+|---|---|---|---|
+| `energie_mj_me` | 3.0 | 16.0 | MJ/kg TS außerhalb Normalbereich |
+| `rohprotein_pct` | 2.0 | 40.0 | — |
+| `calcium_g` | 0.1 | 30.0 | — |
+| `selen_mg` | 0.01 | 2.0 | Selen-Toxizitätsrisiko bei > 2 mg/kg TS |
+| `wassergehalt_pct` | 5.0 | 80.0 | — |
+| Ca:P-Verhältnis | 1.0 | 6.0 | Umgekehrtes Verhältnis kritisch |
+
+Validierungsfehler → orange hervorgehobene Zeilen in der Vorschau,  
+kein Abbruch — Benutzer entscheidet selbst.
+
+#### Erweiterungspunkt: `labor_aliase.json`
+
+```json
+{
+  "Trockensubstanz": "wassergehalt_pct",
+  "TS": "wassergehalt_pct",
+  "Dry Matter": "wassergehalt_pct",
+  "ME Pferd": "energie_mj_me",
+  "XP": "rohprotein_pct",
+  "Crude Protein": "rohprotein_pct",
+  "WSC+ESC": "zucker_pct"
+}
+```
+
+Datei liegt neben der `.exe` → Labore mit abweichenden Spaltenköpfen  
+können ohne Code-Änderung ergänzt werden.
+
+#### Abhängigkeiten
+
+| Paket | Verwendung |
+|---|---|
+| `openpyxl` | bereits installiert (XLSX-Export) — für XLSX-Import wiederverwenden |
+| `csv` | stdlib, kein Zusatzpaket |
+| `reportlab` / `ocr_import.py` | PDF-Fallback (optional, nur wenn reportlab+easyocr vorhanden) |
+
+---
+
+### 4.2 OCR-Import ausbauen
+
+Vorhandenes `ocr_import.py` (EasyOCR + OpenCV) zum vollwertigen Import-Pfad ausbauen:
+- Erkannte Felder direkt in den Labor-Import-Dialog (4.1) übergeben
+- Qualitätsscore je Feld anzeigen (OCR-Konfidenz)
+- Manuelle Korrektur unsicherer Werte vor dem Speichern
+
+---
+
+### 4.3 Futtermittel-Datenbank-Update (Online-Feed)
+
+- [ ] JSON-Endpunkt (GitHub Releases oder eigener Server) mit geprüften Stammdaten
+- [ ] Beim Start prüfen ob neuere Futtermittel-Stammdaten verfügbar → optionaler Download
+- [ ] Nur additive Updates — bestehende Benutzerdaten werden nie überschrieben
+
+---
+
+### 4.4 Mehrsprachigkeit
+
+- [ ] Qt Linguist / `.ts`-Dateien für DE / EN
+- [ ] Sprachauswahl in den Einstellungen
+
+---
+
+### 4.5 Cloud-Sync / Backup
+
+- [ ] Konfigurierbarer Backup-Pfad (OneDrive, NAS, USB)
+- [ ] Automatisches tägliches Backup beim Programmstart
 
 ---
 
