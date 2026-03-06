@@ -295,7 +295,8 @@ def berechne_bedarf(p: PferdeParameter) -> Bedarfswerte:
     # ----------------------------------------------------------------
     # 5. SPURENELEMENTE (mg/Tag)
     # ----------------------------------------------------------------
-    b.eisen_mg   = 0.045 * kgw * nf_e     # 40–60 mg/kg TS
+    b.eisen_mg   = 0.75 * kgw * nf_e      # GfE 2014: 40–50 mg/kg TS × ~1,5 % KM-Aufnahme
+                                           # 500 kg Freizeit: 0.75×500×1.0 = 375 mg/Tag
     b.kupfer_mg  = max(100, 0.12 * kgw)
     b.zink_mg    = max(400, 0.40 * kgw)
     b.mangan_mg  = max(400, 0.40 * kgw)

@@ -32,6 +32,7 @@ NAEHRSTOFFE = [
     ("phosphor_g",    "phosphor_g",   "Phosphor",        "g",      5,  80),
     ("magnesium_g",   "magnesium_g",  "Magnesium",       "g",      5,  80),
     ("natrium_g",     "natrium_g",    "Natrium",         "g",      5, 100),
+    ("eisen_mg",      "eisen_mg",     "Eisen",           "mg",    10, 400),  # Überschuss fast immer vorhanden (Heu)
     ("kupfer_mg",     "kupfer_mg",    "Kupfer",          "mg",     5,  80),
     ("zink_mg",       "zink_mg",      "Zink",            "mg",     5,  80),
     ("mangan_mg",     "mangan_mg",    "Mangan",          "mg",     5,  80),
