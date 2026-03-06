@@ -390,6 +390,13 @@ def _seed_stammdaten(conn: sqlite3.Connection):
              3.5, 6.0, 3.4, 0.3, 6.7, 60, 20, 55, 22, 0.07, 0.05,
              0, 0, 35, 1.8, 0, "DLG-Futterwerttabelle"),
 
+            # Ungeschält: höherer Rohfaseranteil (Schalen ~30 % RF), niedrigerer Fett- u. Energiegehalt
+            # RP, Fett, Faser lt. DLG-Futterwerttabelle (je kg TS, 8 % Wasser)
+            ("Sonnenblumenkerne (ungeschält)", None, "Rohstoff", "Ölsaat", 8.0,
+             14.0, 15.0, 5.0, 3.5, 30.0, 27.0, 3.0, 2.0, 5.0,
+             3.0, 5.5, 3.5, 0.3, 7.5, 50, 15, 45, 20, 0.05, 0.05,
+             0, 0, 25, 1.5, 0, "DLG-Futterwerttabelle"),
+
             ("Futterhanf (Samen)", None, "Rohstoff", "Ölsaat", 7.0,
              20.0, 25.0, 9.0, 5.0, 32.0, 22.0, 3.0, 2.0, 5.0,
              2.0, 8.0, 5.0, 0.2, 8.0, 80, 10, 70, 120, 0.06, 0.1,
