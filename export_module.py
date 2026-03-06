@@ -709,3 +709,76 @@ def export_erhebungsblatt_pdf(ziel_pfad: str):
         s_footer))
 
     doc.build(story)
+
+
+# ---------------------------------------------------------------------------
+# Varianten-Vergleich XLSX Export
+# ---------------------------------------------------------------------------
+
+def exportiere_vergleich_xlsx(ziel_pfad: str, pferd: dict, bedarf,
+                              varianten: list):
+    """
+    Exportiert einen Varianten-Vergleich als Excel-Datei.
+    varianten: list of (name: str, erg: RationsErgebnis)
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise RuntimeError("openpyxl ist nicht installiert.")
+    from optimierung import NAEHRSTOFFE
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Varianten-Vergleich"
+
+    header_fill  = PatternFill("solid", fgColor="2E4057")
+    ok_fill      = PatternFill("solid", fgColor="D4EDDA")
+    warn_fill    = PatternFill("solid", fgColor="FFF3CD")
+    crit_fill    = PatternFill("solid", fgColor="F8D7DA")
+    header_font  = Font(bold=True, color="FFFFFF")
+
+    # Titel
+    ws.cell(1, 1, f"Varianten-Vergleich: {pferd.get('name', '')}").font = Font(bold=True, size=13)
+    ws.cell(2, 1, f"Erstellt: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+
+    # Header-Zeile
+    headers = ["Nährstoff", "Einheit", "Bedarf"] + [n for n, _ in varianten]
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(4, col, h)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = Alignment(horizontal="center")
+
+    row = 5
+    for ist_feld, bed_feld, anzeige, einheit, _, _ in NAEHRSTOFFE:
+        bed_val = getattr(bedarf, bed_feld, 0.0) or 0.0
+        if bed_val <= 0:
+            continue
+        ws.cell(row, 1, anzeige)
+        ws.cell(row, 2, einheit)
+        ws.cell(row, 3, round(bed_val, 4)).alignment = Alignment(horizontal="right")
+
+        for col_idx, (_, erg) in enumerate(varianten):
+            v_val = getattr(erg, ist_feld, 0.0) or 0.0
+            pct   = (v_val - bed_val) / bed_val * 100 if bed_val else 0
+            txt   = f"{pct:+.0f}%"
+            c = ws.cell(row, 4 + col_idx, txt)
+            c.alignment = Alignment(horizontal="center")
+            if pct < -5:
+                c.fill = crit_fill
+            elif pct > 50:
+                c.fill = warn_fill
+            else:
+                c.fill = ok_fill
+        row += 1
+
+    # Spaltenbreiten
+    ws.column_dimensions["A"].width = 18
+    ws.column_dimensions["B"].width = 8
+    ws.column_dimensions["C"].width = 12
+    for i in range(len(varianten)):
+        col_letter = openpyxl.utils.get_column_letter(4 + i)
+        ws.column_dimensions[col_letter].width = 20
+
+    wb.save(ziel_pfad)

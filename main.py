@@ -37,6 +37,7 @@ from views.kunden_view import KundenView
 from views.futtermittel_view import FuttermittelView
 from views.rations_view import RationsView
 from views.dashboard_view import DashboardView
+from views.supplement_view import SupplementView
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +243,7 @@ class MainWindow(QMainWindow):
             "dashboard":    DashboardView(),
             "kunden":       KundenView(),
             "futtermittel": FuttermittelView(),
+            "supplemente":  SupplementView(),
             "ration":       RationsView(),
         }
 
@@ -286,6 +288,7 @@ class MainWindow(QMainWindow):
             ("dashboard",    "Dashboard",       "⊞"),
             ("kunden",       "Kunden & Pferde", "●"),
             ("futtermittel", "Futtermittel",    "◈"),
+            ("supplemente",  "Supplemente",     "✦"),
             ("ration",       "Rationsrechner",  "⊕"),
         ]
 

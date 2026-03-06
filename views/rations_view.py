@@ -15,6 +15,7 @@ from rationsrechner import (
     berechne_ration, berechne_differenz,
     position_aus_db_row, heu_als_position
 )
+from views.optimierungs_view import OptimierungsDialog
 
 
 # ---------------------------------------------------------------------------
@@ -67,8 +68,15 @@ class RationsView(QWidget):
         xlsx_btn = QPushButton("📊 Excel")
         xlsx_btn.setFixedWidth(90)
         xlsx_btn.clicked.connect(lambda: self._exportieren("xlsx"))
+        opt_btn = QPushButton("🔍 Optimierungsassistent")
+        opt_btn.setFixedWidth(190)
+        opt_btn.setStyleSheet(
+            "background:#2E4057; color:white; border-radius:4px; padding:3px;"
+        )
+        opt_btn.clicked.connect(self._oeffne_optimierungsassistent)
         top_lo.addWidget(pdf_btn)
         top_lo.addWidget(xlsx_btn)
+        top_lo.addWidget(opt_btn)
         layout.addLayout(top_lo)
 
         # ── Haupt-Splitter ──
@@ -617,3 +625,32 @@ class RationsView(QWidget):
                 QMessageBox.information(self, "Erfolg", f"Excel gespeichert:\n{pfad}")
             except Exception as e:
                 QMessageBox.critical(self, "Fehler", str(e))
+
+    # ----------------------------------------------------------------
+    # Optimierungsassistent
+    # ----------------------------------------------------------------
+
+    def _oeffne_optimierungsassistent(self):
+        if not hasattr(self, "_letzter_bedarf") or not self._aktuelles_pferd:
+            QMessageBox.information(
+                self, "Hinweis",
+                "Bitte zuerst ein Pferd auswählen und die Ration berechnen."
+            )
+            return
+
+        heu_q    = self.heu_combo.currentData()
+        heu_menge = self.heu_menge.value()
+
+        # Basis-Positionen als (dict, menge_kg) für den Dialog aufbereiten
+        basis_pos = [(fm, menge) for fm, menge in self._rations_positionen]
+
+        dlg = OptimierungsDialog(
+            pferd            = self._aktuelles_pferd,
+            ist              = self._letztes_ist,
+            bedarf           = self._letzter_bedarf,
+            heu_menge_kg     = heu_menge,
+            heu_qualitaet    = heu_q,
+            basis_positionen = basis_pos,
+            parent           = self,
+        )
+        dlg.exec()
