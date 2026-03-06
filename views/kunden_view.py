@@ -198,6 +198,37 @@ class PferdDialog(QDialog):
         form2.addRow("Notiz:", self.notiz_edit)
         layout.addLayout(form2)
 
+        # Override-Gruppe
+        override_group = QGroupBox("Individueller Energiebedarf (Override)")
+        override_lo = QFormLayout(override_group)
+
+        self.override_aktiv_check = QCheckBox("GfE-Standard überschreiben")
+        aktiv = bool(self.pferd.get("override_energie_mj"))
+        self.override_aktiv_check.setChecked(aktiv)
+        self.override_aktiv_check.toggled.connect(self._toggle_override)
+        override_lo.addRow("", self.override_aktiv_check)
+
+        self.override_energie_spin = QDoubleSpinBox()
+        self.override_energie_spin.setRange(20, 300)
+        self.override_energie_spin.setSuffix(" MJ/Tag")
+        self.override_energie_spin.setValue(self.pferd.get("override_energie_mj") or 60.0)
+        self.override_energie_spin.setEnabled(aktiv)
+        override_lo.addRow("Energie:", self.override_energie_spin)
+
+        self.override_begruendung_edit = QLineEdit(self.pferd.get("override_begruendung") or "")
+        self.override_begruendung_edit.setPlaceholderText("Begründung (Tierarzt, Gewichtsverlust …)")
+        self.override_begruendung_edit.setEnabled(aktiv)
+        override_lo.addRow("Begründung:", self.override_begruendung_edit)
+
+        self.raufutter_min_spin = QDoubleSpinBox()
+        self.raufutter_min_spin.setRange(0, 50)
+        self.raufutter_min_spin.setSuffix(" kg FM/Tag")
+        self.raufutter_min_spin.setSpecialValueText("Automatisch (GfE)")
+        self.raufutter_min_spin.setValue(self.pferd.get("raufutter_min_kg") or 0.0)
+        override_lo.addRow("Raufutter-Min.:", self.raufutter_min_spin)
+
+        layout.addWidget(override_group)
+
         # Buttons
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok |
@@ -215,17 +246,20 @@ class PferdDialog(QDialog):
         diagnosen = [d for d, cb in self.diag_checks.items() if cb.isChecked()]
 
         daten = {
-            "kunde_id":      self.kunde_id,
-            "name":          self.name_edit.text().strip(),
-            "gewicht_kg":    self.gewicht_spin.value(),
-            "alter_jahre":   self.alter_spin.value(),
-            "rasse_typ":     self.rasse_combo.currentText(),
-            "nutzung":       self.nutzung_combo.currentData(),
-            "geschlecht":    self.geschlecht_combo.currentText(),
-            "traechtigkeit": self.traecht_spin.value(),
-            "laktation":     self.lakt_spin.value(),
-            "diagnosen":     ", ".join(diagnosen),
-            "notiz":         self.notiz_edit.toPlainText().strip(),
+            "kunde_id":             self.kunde_id,
+            "name":                 self.name_edit.text().strip(),
+            "gewicht_kg":           self.gewicht_spin.value(),
+            "alter_jahre":          self.alter_spin.value(),
+            "rasse_typ":            self.rasse_combo.currentText(),
+            "nutzung":              self.nutzung_combo.currentData(),
+            "geschlecht":           self.geschlecht_combo.currentText(),
+            "traechtigkeit":        self.traecht_spin.value(),
+            "laktation":            self.lakt_spin.value(),
+            "diagnosen":            ", ".join(diagnosen),
+            "notiz":                self.notiz_edit.toPlainText().strip(),
+            "override_energie_mj":  self.override_energie_spin.value() if self.override_aktiv_check.isChecked() else None,
+            "override_begruendung": self.override_begruendung_edit.text().strip() or None,
+            "raufutter_min_kg":     self.raufutter_min_spin.value() or None,
         }
 
         if self.pferd.get("id"):
@@ -233,6 +267,11 @@ class PferdDialog(QDialog):
 
         database.speichere_pferd(daten)
         self.accept()
+
+    def _toggle_override(self, aktiv: bool):
+        """Aktiviert / deaktiviert die Override-Eingabefelder."""
+        self.override_energie_spin.setEnabled(aktiv)
+        self.override_begruendung_edit.setEnabled(aktiv)
 
 
 class KundenView(QWidget):

@@ -3,7 +3,7 @@
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QComboBox, QDoubleSpinBox,
+    QTableWidget, QTableWidgetItem, QComboBox, QDoubleSpinBox, QSpinBox,
     QGroupBox, QSplitter, QScrollArea, QFrame, QHeaderView,
     QFileDialog, QMessageBox, QSizePolicy
 )
@@ -101,7 +101,8 @@ class RationsView(QWidget):
 
         # Heu-Gruppe
         heu_group = QGroupBox("Heu")
-        heu_lo = QHBoxLayout(heu_group)
+        heu_lo_v = QVBoxLayout(heu_group)
+        heu_lo = QHBoxLayout()
 
         self.heu_combo = QComboBox()
         self.heu_combo.setMinimumWidth(160)
@@ -116,7 +117,31 @@ class RationsView(QWidget):
         self.heu_menge.setSingleStep(0.5)
         self.heu_menge.setValue(8.0)
         self.heu_menge.valueChanged.connect(self._berechne)
+        self.heu_menge.valueChanged.connect(self._aktualisiere_heu_hinweis)
         heu_lo.addWidget(self.heu_menge)
+
+        heu_lo.addWidget(QLabel("Mahlzeiten:"))
+        self.heu_mahlzeiten_spin = QSpinBox()
+        self.heu_mahlzeiten_spin.setRange(1, 6)
+        self.heu_mahlzeiten_spin.setValue(2)
+        self.heu_mahlzeiten_spin.setSuffix(" ×/Tag")
+        self.heu_mahlzeiten_spin.valueChanged.connect(self._aktualisiere_heu_hinweis)
+        heu_lo.addWidget(self.heu_mahlzeiten_spin)
+
+        heu_lo.addWidget(QLabel("Verlust:"))
+        self.heu_verlust_spin = QDoubleSpinBox()
+        self.heu_verlust_spin.setRange(0, 40)
+        self.heu_verlust_spin.setSuffix(" %")
+        self.heu_verlust_spin.setSingleStep(5.0)
+        self.heu_verlust_spin.valueChanged.connect(self._aktualisiere_heu_hinweis)
+        self.heu_verlust_spin.valueChanged.connect(self._berechne)
+        heu_lo.addWidget(self.heu_verlust_spin)
+
+        self.heu_hinweis_label = QLabel("")
+        self.heu_hinweis_label.setStyleSheet("color: #6C757D; font-size: 11px;")
+
+        heu_lo_v.addLayout(heu_lo)
+        heu_lo_v.addWidget(self.heu_hinweis_label)
         layout.addWidget(heu_group)
 
         # Kraftfutter/Ergänzung hinzufügen
@@ -300,7 +325,9 @@ class RationsView(QWidget):
         heu_menge = self.heu_menge.value()
         positionen = [(fm["id"], menge) for fm, menge in self._rations_positionen]
         database.speichere_ist_schema(
-            self._aktuelles_pferd["id"], heu_id, heu_menge, positionen)
+            self._aktuelles_pferd["id"], heu_id, heu_menge, positionen,
+            heu_mahlzeiten=self.heu_mahlzeiten_spin.value(),
+            heu_verlust_pct=self.heu_verlust_spin.value())
         jetzt = datetime.now().strftime("%d.%m.%Y %H:%M")
         self.schema_info_label.setText(f"\u2713 Ist-Schema gespeichert: {jetzt}")
         QMessageBox.information(
@@ -313,6 +340,9 @@ class RationsView(QWidget):
         self._rations_positionen.clear()
         self._aktualisiere_rations_tabelle()
         self.heu_menge.setValue(8.0)
+        self.heu_mahlzeiten_spin.setValue(2)
+        self.heu_verlust_spin.setValue(0.0)
+        self._aktualisiere_heu_hinweis()
         self._berechne()
 
     def _lade_schema_fuer_pferd(self, pferd_id: int):
@@ -331,6 +361,15 @@ class RationsView(QWidget):
         self.heu_menge.blockSignals(True)
         self.heu_menge.setValue(heu_menge)
         self.heu_menge.blockSignals(False)
+
+        # Heu-Mahlzeiten und Verlust
+        self.heu_mahlzeiten_spin.blockSignals(True)
+        self.heu_mahlzeiten_spin.setValue(ration.get("heu_mahlzeiten") or 2)
+        self.heu_mahlzeiten_spin.blockSignals(False)
+        self.heu_verlust_spin.blockSignals(True)
+        self.heu_verlust_spin.setValue(ration.get("heu_verlust_pct") or 0.0)
+        self.heu_verlust_spin.blockSignals(False)
+        self._aktualisiere_heu_hinweis()
 
         # Heu-Qualit\u00e4t
         if schema["heu"]:
@@ -412,6 +451,18 @@ class RationsView(QWidget):
     # Berechnung
     # ----------------------------------------------------------------
 
+    def _aktualisiere_heu_hinweis(self):
+        """Aktualisiert den Hinweistext unter den Heu-Spinboxen."""
+        menge     = self.heu_menge.value()
+        mahlzeiten = self.heu_mahlzeiten_spin.value()
+        verlust   = self.heu_verlust_spin.value()
+        aufgenommen = menge * (1.0 - verlust / 100.0)
+        je_mahlzeit = menge / mahlzeiten if mahlzeiten > 0 else menge
+        self.heu_hinweis_label.setText(
+            f"→ {je_mahlzeit:.1f} kg/Mahlzeit  |  "
+            f"aufgen.: {aufgenommen:.1f} kg FM  ({aufgenommen * 0.88:.1f} kg TS)"
+        )
+
     def _berechne(self):
         if not self._aktuelles_pferd:
             return
@@ -420,14 +471,20 @@ class RationsView(QWidget):
         diag = [d.strip() for d in (p.get("diagnosen") or "").split(",") if d.strip()]
 
         pferde_param = PferdeParameter(
-            gewicht_kg   = p["gewicht_kg"],
-            alter_jahre  = p["alter_jahre"],
-            rasse_typ    = p.get("rasse_typ", "Warmblut"),
-            nutzung      = p.get("nutzung", "Freizeit"),
-            geschlecht   = p.get("geschlecht", "Stute"),
-            traechtigkeit= p.get("traechtigkeit", 0),
-            laktation    = p.get("laktation", 0),
-            diagnosen    = diag,
+            gewicht_kg           = p["gewicht_kg"],
+            alter_jahre          = p["alter_jahre"],
+            rasse_typ            = p.get("rasse_typ", "Warmblut"),
+            nutzung              = p.get("nutzung", "Freizeit"),
+            geschlecht           = p.get("geschlecht", "Stute"),
+            traechtigkeit        = p.get("traechtigkeit", 0),
+            laktation            = p.get("laktation", 0),
+            diagnosen            = diag,
+            override_energie_mj  = p.get("override_energie_mj"),
+            override_rp_g        = p.get("override_rp_g"),
+            override_selen_mg    = p.get("override_selen_mg"),
+            override_nsc_max_pct = p.get("override_nsc_max_pct"),
+            override_begruendung = p.get("override_begruendung"),
+            raufutter_min_kg     = p.get("raufutter_min_kg"),
         )
 
         bedarf = berechne_bedarf(pferde_param)
@@ -436,10 +493,11 @@ class RationsView(QWidget):
         positionen = []
 
         # Heu
-        heu_q = self.heu_combo.currentData()
+        heu_q     = self.heu_combo.currentData()
         heu_menge = self.heu_menge.value()
+        verlust_pct = self.heu_verlust_spin.value()
         if heu_q and heu_menge > 0:
-            positionen.append(heu_als_position(heu_q, heu_menge))
+            positionen.append(heu_als_position(heu_q, heu_menge, verlust_pct))
 
         # Kraftfutter etc.
         for fm_daten, menge_kg in self._rations_positionen:
@@ -506,6 +564,7 @@ class RationsView(QWidget):
             ("Kupfer",       "mg/Tag",  bedarf.kupfer_mg,       ist.kupfer_mg),
             ("Zink",         "mg/Tag",  bedarf.zink_mg,         ist.zink_mg),
             ("Mangan",       "mg/Tag",  bedarf.mangan_mg,       ist.mangan_mg),
+            ("Eisen",        "mg/Tag",  bedarf.eisen_mg,        ist.eisen_mg),
             ("Selen",        "mg/Tag",  bedarf.selen_mg,        ist.selen_mg),
             (None, None, None, None),
             ("Vitamin A",    "IE/Tag",  bedarf.vit_a_ie,        ist.vit_a_ie),

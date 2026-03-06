@@ -33,6 +33,25 @@ def init_db():
             conn.execute("ALTER TABLE supplement_katalog ADD COLUMN bevorzugt INTEGER DEFAULT 0")
         except Exception:
             pass  # bereits vorhanden
+        # Migration: pferde — individuelle Bedarfs-Overrides und Raufutter-Minimum
+        for col, typ in [
+            ("override_energie_mj",  "REAL"),
+            ("override_begruendung", "TEXT"),
+            ("raufutter_min_kg",     "REAL"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE pferde ADD COLUMN {col} {typ}")
+            except Exception:
+                pass
+        # Migration: rationen — Verlust und Mahlzeiten
+        for col, typ in [
+            ("heu_mahlzeiten",  "INTEGER DEFAULT 2"),
+            ("heu_verlust_pct", "REAL DEFAULT 0.0"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE rationen ADD COLUMN {col} {typ}")
+            except Exception:
+                pass
         # Testdatensätze bereinigen
         conn.execute("DELETE FROM futtermittel WHERE name LIKE '__TEST%'")
         _seed_stammdaten(conn)
@@ -1103,7 +1122,9 @@ def heu_qualitaeten() -> list:
 def speichere_ist_schema(pferd_id: int,
                          heu_qualitaet_id: int | None,
                          heu_menge_kg: float,
-                         positionen: list) -> int:
+                         positionen: list,
+                         heu_mahlzeiten: int = 2,
+                         heu_verlust_pct: float = 0.0) -> int:
     """
     Speichert die aktuelle Ration als 'Ist-Schema' für das Pferd (ersetzt evtl. vorhandenes).
     positionen: list of (futtermittel_id: int, menge_kg: float)
@@ -1118,10 +1139,11 @@ def speichere_ist_schema(pferd_id: int,
         cursor = conn.execute(
             """
             INSERT INTO rationen (pferd_id, bezeichnung, heu_qualitaet_id, heu_menge_kg,
+                                  heu_mahlzeiten, heu_verlust_pct,
                                   erstellt_am, geaendert_am)
-            VALUES (?, 'Ist-Schema', ?, ?, datetime('now'), datetime('now'))
+            VALUES (?, 'Ist-Schema', ?, ?, ?, ?, datetime('now'), datetime('now'))
             """,
-            (pferd_id, heu_qualitaet_id, heu_menge_kg))
+            (pferd_id, heu_qualitaet_id, heu_menge_kg, heu_mahlzeiten, heu_verlust_pct))
         ration_id = cursor.lastrowid
         for sort_i, (fm_id, menge) in enumerate(positionen):
             conn.execute(

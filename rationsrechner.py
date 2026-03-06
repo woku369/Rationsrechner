@@ -229,17 +229,21 @@ def position_aus_db_row(row: dict, menge_kg: float) -> RationsPosition:
     )
 
 
-def heu_als_position(qualitaet: dict, menge_kg: float) -> RationsPosition:
+def heu_als_position(qualitaet: dict, menge_kg: float,
+                     verlust_pct: float = 0.0) -> RationsPosition:
     """Erstellt eine RationsPosition für Heu aus einem Heu-Qualitätsdatensatz."""
     e_mitte = (qualitaet["energie_min"] + qualitaet["energie_max"]) / 2
     rp_mitte = (qualitaet["rp_min_pct"] + qualitaet["rp_max_pct"]) / 2
     zs_max = qualitaet.get("zucker_staerke_max_pct", 12.0)
     nsc_heu = zs_max * 0.8  # konservative Schätzung
+    aufgenommen_kg = menge_kg * (1.0 - verlust_pct / 100.0)
 
     return RationsPosition(
-        futtermittel_id = -qualitaet["id"],
-        name            = f"Heu ({qualitaet['bezeichnung']})",
-        menge_kg        = menge_kg,
+        futtermittel_id      = -qualitaet["id"],
+        name                 = f"Heu ({qualitaet['bezeichnung']})",
+        menge_kg             = aufgenommen_kg,
+        menge_verabreicht_kg = menge_kg,
+        verlust_pct          = verlust_pct,
         wassergehalt_pct= 12.0,
         energie_mj_me   = e_mitte,
         rohprotein_pct  = rp_mitte,

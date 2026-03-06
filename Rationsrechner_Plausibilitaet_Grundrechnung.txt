@@ -1,0 +1,301 @@
+================================================================================
+  GURKTALER PFERDEFUTTER-RATIONSRECHNER
+  Plausibilitätsprüfung bedarfsberechnung.py – Grundrechengang
+  Erstellt: 06.03.2026 | Referenz: GfE 6. Auflage 2014, NRC 2007
+================================================================================
+
+ZUSAMMENFASSUNG
+──────────────────────────────────────────────────────────────────────────────
+Gut:    Energieformel, Rassenfaktoren, Nutzungsfaktoren Energie, Mineralstoffe,
+        Spurenelemente, Vitamine, Senior-Anpassung, Erkrankungslogik – alles ✅
+Offen: 6 Korrekturen im Rechengang, davon 2 kritisch (Calcium Trächtigkeit,
+        Selen kleine Pferde), 4 moderat (RP Arbeit, RP Hengst, RP Jungpferd,
+        TS-Aufnahme Jungpferd)
+──────────────────────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WAS STIMMT – zur Sicherheit bestätigt
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ✅ Energieformel: 0.53 × KGW^0.75 × rf  – exakt GfE 6. Auflage
+     200kg→28.2MJ  400kg→47.4MJ  500kg→56.0MJ  700kg→72.1MJ  (alle <2% Abw.)
+
+  ✅ Rassenfaktoren: alle Werte im Literaturbereich
+     Shetland 0.78 / Isländer 0.80 / Haflinger 0.88 / QH 0.95 /
+     Warmblut 1.00 / Vollblut 1.10 / Araber 1.05
+
+  ✅ Nutzungsfaktoren Energie:
+     Freizeit 1.10 / Leicht 1.25 / Mittel 1.50 / Schwer 1.85
+     alle im GfE-Bereich
+
+  ✅ Mineralstoffe Erhaltung:
+     Ca 0.040 / P 0.028 / Mg 0.015 / Na 0.020 / K 0.050  g/kg KGW – alle ✅
+
+  ✅ Ca:P-Verhältnis: 1.43:1 (Erhaltung) bis 1.53:1 (Schwere Arbeit)
+     GfE-Soll: 1.3:1 – 2.5:1 – immer im sicheren Bereich
+
+  ✅ Spurenelemente (500kg): Cu 100mg / Zn 400mg / Mn 400mg / Se 1.0mg / J 3.5mg
+     alle im GfE-Bereich
+
+  ✅ Vitamine (500kg): VitA 22.000IE / VitD 3.300IE / VitE 500mg / VitB1 15mg ✅
+
+  ✅ Senior-Anpassung ab 20J: RP+15%, P+10%, VitE+20%, TS-0.95  – korrekt
+
+  ✅ Erkrankungen: EMS/Cushing NSC10%, PSSM1 Stärke5%, Hufrehe Biotin+, COPD-Hinweis
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  KORREKTUREN  (nach Priorität)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+─────────────────────────────────────────────────────────────────────────────
+[ ] K1  ⚠️  KRITISCH – Calcium bei Trächtigkeit fehlt komplett
+─────────────────────────────────────────────────────────────────────────────
+    Datei:  bedarfsberechnung.py
+    Bereich: Abschnitt 4 MINERALSTOFFE, nach dem Laktations-Block (~Zeile 255)
+
+    IST:  Kein Ca/P-Zuschlag bei Trächtigkeit.
+          500kg Stute Monat 9: Ca=20g (wie Erhaltung!)
+
+    GfE:  Ab Monat 7 steigt Ca-Bedarf deutlich durch Knochenaufbau des Fohlens.
+          Monat 9-11: Ca-Bedarf 40-60g/Tag bei 500kg Stute!
+
+    SOLL – nach dem Laktations-Block (ca. Zeile 255) einfügen:
+
+        # Trächtigkeit: Calcium und Phosphor für Knochenaufbau des Fohlens
+        if p.traechtigkeit >= 9:
+            b.calcium_g  *= 1.50   # GfE: letztes Drittel +50%
+            b.phosphor_g *= 1.40
+        elif p.traechtigkeit >= 7:
+            b.calcium_g  *= 1.25
+            b.phosphor_g *= 1.20
+
+    KONTROLLE nach Fix:
+        500kg Stute Monat 9:  Ca ≈ 30g  ✅  (vorher 20g → fataler Mangel!)
+        500kg Stute Monat 11: Ca ≈ 30g  ✅
+
+
+─────────────────────────────────────────────────────────────────────────────
+[ ] K2  ⚠️  KRITISCH – Selen-Minimum gefährlich für kleine Pferde
+─────────────────────────────────────────────────────────────────────────────
+    Datei:  bedarfsberechnung.py
+    Zeile:  ~264  (Spurenelemente-Block)
+
+    IST:
+        b.selen_mg = max(1.0, 0.0015 * kgw)
+
+    PROBLEM: Das Minimum von 1.0mg gilt für alle Gewichtsklassen.
+        100kg Shetland: 1.0mg bei Toxgrenze 0.9mg → ÜBERSCHREITUNG!
+        150kg Pony:     1.0mg bei Toxgrenze 1.3mg → nur 30% Sicherheitsmarge
+        200kg Pony:     1.0mg bei Toxgrenze 1.8mg → 44% Marge (zu eng)
+    Selen ist eines der wenigen Mineralstoffe wo Bedarf und Toxizität
+    sehr nahe beieinander liegen!
+
+    SOLL:
+        b.selen_mg = max(0.5, 0.0015 * kgw)   # Minimum 0.5 statt 1.0
+
+    KONTROLLE nach Fix:
+        100kg: 0.50mg  Toxgrenze 0.9mg  Marge 44%  ✅
+        200kg: 0.50mg  Toxgrenze 1.8mg  Marge 72%  ✅
+        500kg: 0.75mg  ← jetzt unter 1.0mg!
+    HINWEIS: 500kg Pferd bekommt dann 0.75mg statt 1.0mg.
+    Das liegt im GfE-Bereich (0.1mg/kg TS × 9kg TS = 0.9mg Bedarf).
+    Mineralfutter/WES füllt die Differenz auf – das ist korrekt so.
+
+
+─────────────────────────────────────────────────────────────────────────────
+[ ] K3  MODERAT – Rohprotein bei Arbeit zu niedrig
+─────────────────────────────────────────────────────────────────────────────
+    Datei:  bedarfsberechnung.py
+    Zeile:  ~82  (NUTZUNGSFAKTOR_PROTEIN Dict)
+
+    IST:
+        "Mittlere_Arbeit": 1.25,
+        "Schwere_Arbeit":  1.40,
+
+    ERGEBNIS:
+        500kg Mittlere Arbeit: 875g  [GfE-Soll: 900-1100]  ← knapp drunter
+        600kg Schwere Arbeit:  1176g [GfE-Soll: 1200-1500] ← deutlich drunter
+
+    SOLL:
+        "Mittlere_Arbeit": 1.35,   # Ergebnis 500kg: 945g  ✅
+        "Schwere_Arbeit":  1.60,   # Ergebnis 600kg: 1344g ✅
+
+
+─────────────────────────────────────────────────────────────────────────────
+[ ] K4  MODERAT – Hengst: RP-Zuschlag fehlt (Energie-Zuschlag vorhanden)
+─────────────────────────────────────────────────────────────────────────────
+    Datei:  bedarfsberechnung.py
+    Bereich: nach dem Lysin/Methionin-Block (~Zeile 230)
+
+    IST:  Energie +10% für Hengste bei Arbeit vorhanden.
+          RP-Zuschlag für Hengste fehlt komplett.
+
+    GfE:  Hengste haben erhöhten RP-Bedarf durch Spermaproduktion
+          und stärkeren Muskelaufbau. +5% ist konservativ aber korrekt.
+
+    SOLL – nach dem Methionin-Block einfügen:
+
+        # Hengst: leicht erhöhter RP-Bedarf
+        if p.geschlecht == "Hengst":
+            b.rp_g        *= 1.05
+            b.lysin_g     *= 1.05
+            b.methionin_g *= 1.05
+
+
+─────────────────────────────────────────────────────────────────────────────
+[ ] K5  MODERAT – Jungpferde 2-3 Jahre: RP-Zuschlag fehlt
+─────────────────────────────────────────────────────────────────────────────
+    Datei:  bedarfsberechnung.py
+    Bereich: Jungpferde-Block (~Zeile 222, nach "if p.alter_jahre < 2")
+
+    IST:
+        if p.alter_jahre < 2:
+            b.rp_g *= 1.30
+        # kein Zweig für 2-3 Jahre
+
+    PROBLEM: 2-3-jährige bekommen Energie-Zuschlag (+20%) aber keinen RP-Zuschlag.
+        GfE: In dieser Phase noch aktiver Muskelaufbau → RP-Bedarf erhöht.
+
+    SOLL:
+        if p.alter_jahre < 2:
+            b.rp_g *= 1.30
+        elif p.alter_jahre < 3:       # ← NEU
+            b.rp_g *= 1.10            # ← NEU
+
+
+─────────────────────────────────────────────────────────────────────────────
+[ ] K6  MODERAT – Trockenmasse bei Jungpferden zu niedrig
+─────────────────────────────────────────────────────────────────────────────
+    Datei:  bedarfsberechnung.py
+    Bereich: Abschnitt 1 TROCKENMASSE (~Zeile 163)
+
+    IST:
+        if p.nutzung in ("Mittlere_Arbeit", "Schwere_Arbeit"):
+            tm_pct = 0.020
+        else:
+            tm_pct = 0.018
+        b.trockenmasse_kg = kgw * tm_pct
+
+    PROBLEM: Jungpferde haben höhere TS-Aufnahme als adulte Pferde.
+        GfE: <2J: 2.5-3.5% KGW, 2-3J: 2.0-2.5% KGW
+        Code gibt pauschal 1.8% → TS-Bedarf des Jungpferds unterschätzt.
+
+    SOLL – vor dem "b.trockenmasse_kg = ..." Block:
+
+        if p.nutzung in ("Mittlere_Arbeit", "Schwere_Arbeit"):
+            tm_pct = 0.020
+        else:
+            tm_pct = 0.018
+
+        # Jungpferde: höhere TS-Aufnahme überschreibt den Nutzungswert
+        if p.alter_jahre < 2:
+            tm_pct = 0.030
+        elif p.alter_jahre < 3:
+            tm_pct = 0.025
+
+        b.trockenmasse_kg = kgw * tm_pct
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  OVERRIDE-BUTTONS – Empfehlung
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Ja, Override-Buttons sind sinnvoll. Empfehlung: nur für die Felder die in
+  der Praxis am häufigsten vom GfE-Standard abweichen:
+
+  SINNVOLLE OVERRIDES (in rations_view.py oder pferd_view):
+
+  1. Energie (MJ/Tag)
+     Grund: Tierarzt oder Ernährungsberater hat Laborwerte und gibt
+     abweichenden Bedarf vor.
+
+  2. Rohprotein (g/Tag)
+     Grund: Blutbild zeigt spezifischen Bedarf, oder Pferd ist Hochleistungsathlet
+     mit bekanntem erhöhten Bedarf.
+
+  3. Selen (mg/Tag)
+     Grund: Se-Status per Blut bekannt. In selenarmen Regionen (z.B. weite Teile
+     Österreichs!) ist der tatsächliche Bedarf oft höher als der GfE-Wert.
+
+  4. NSC-Limit (% TS)
+     Grund: Tierarzt gibt strengeres oder lockereres Limit vor als die
+     Krankheits-Standardwerte.
+
+  NICHT als Override empfohlen:
+  Ca, P, Mg, Zn, Mn, Vitamine – hier sollten die GfE-Werte unverändert bleiben,
+  da Abweichungen zu Interaktionen führen (z.B. Ca:P-Verhältnis bricht bei
+  manuellem Ca-Override zusammen).
+
+  UMSETZUNG (Vorschlag für bedarfsberechnung.py):
+
+  In PferdeParameter die Felder ergänzen:
+      override_energie_mj:  Optional[float] = None
+      override_rp_g:        Optional[float] = None
+      override_selen_mg:    Optional[float] = None
+      override_nsc_max_pct: Optional[float] = None
+
+  Am Ende von berechne_bedarf() anwenden:
+      if p.override_energie_mj  is not None: b.energie_mj  = p.override_energie_mj
+      if p.override_rp_g        is not None: b.rp_g        = p.override_rp_g
+      if p.override_selen_mg    is not None: b.selen_mg    = p.override_selen_mg
+      if p.override_nsc_max_pct is not None: b.nsc_max_pct = p.override_nsc_max_pct
+
+  In der UI ein kleines "⚙ Manuell"-Symbol neben dem Bedarfswert anzeigen
+  wenn ein Override aktiv ist.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ABSCHLUSSKONTROLLE – nach den Fixes
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Python-Schnelltest (aus dem Projektordner ausführen):
+  ──────────────────────────────────────────────────────
+  from bedarfsberechnung import PferdeParameter, berechne_bedarf
+
+  # K1: Calcium Trächtigkeit
+  p = PferdeParameter(gewicht_kg=500, alter_jahre=8, geschlecht="Stute", traechtigkeit=9)
+  b = berechne_bedarf(p)
+  assert b.calcium_g >= 28, f"K1 FEHLER: Ca={b.calcium_g:.1f}g (erwartet ≥28)"
+  print(f"K1 ✅  Ca Trächtigkeit M9: {b.calcium_g:.1f}g")
+
+  # K2: Selen kleine Pferde
+  p = PferdeParameter(gewicht_kg=100, alter_jahre=3, rasse_typ="Shetland Pony")
+  b = berechne_bedarf(p)
+  assert b.selen_mg <= 0.7, f"K2 FEHLER: Se={b.selen_mg:.2f}mg (erwartet ≤0.7)"
+  print(f"K2 ✅  Se 100kg Shetland: {b.selen_mg:.2f}mg")
+
+  # K3: RP Mittlere Arbeit
+  p = PferdeParameter(gewicht_kg=500, alter_jahre=8, nutzung="Mittlere_Arbeit")
+  b = berechne_bedarf(p)
+  assert 900 <= b.rp_g <= 1100, f"K3 FEHLER: RP={b.rp_g:.0f}g (erwartet 900-1100)"
+  print(f"K3 ✅  RP Mittlere Arbeit 500kg: {b.rp_g:.0f}g")
+
+  # K4: Hengst RP
+  ph = PferdeParameter(gewicht_kg=500, alter_jahre=8, geschlecht="Hengst")
+  pw = PferdeParameter(gewicht_kg=500, alter_jahre=8, geschlecht="Wallach")
+  bh = berechne_bedarf(ph); bw = berechne_bedarf(pw)
+  assert bh.rp_g > bw.rp_g, "K4 FEHLER: Hengst RP nicht höher als Wallach"
+  print(f"K4 ✅  Hengst RP: {bh.rp_g:.0f}g > Wallach: {bw.rp_g:.0f}g")
+
+  # K5: Jungpferd 2.5J RP
+  p = PferdeParameter(gewicht_kg=400, alter_jahre=2.5)
+  b = berechne_bedarf(p)
+  p_adult = PferdeParameter(gewicht_kg=400, alter_jahre=5)
+  b_adult = berechne_bedarf(p_adult)
+  assert b.rp_g > b_adult.rp_g, "K5 FEHLER: 2.5J nicht mehr RP als adult"
+  print(f"K5 ✅  RP 2.5J: {b.rp_g:.0f}g > Adult: {b_adult.rp_g:.0f}g")
+
+  # K6: Jungpferd TS
+  p = PferdeParameter(gewicht_kg=300, alter_jahre=1.5)
+  b = berechne_bedarf(p)
+  assert b.trockenmasse_kg / 300 >= 0.025, f"K6 FEHLER: TS={b.trockenmasse_kg:.1f}kg"
+  print(f"K6 ✅  TS Jährling 300kg: {b.trockenmasse_kg:.1f}kg ({b.trockenmasse_kg/300*100:.1f}% KGW)")
+
+  print("\nAlle Checks bestanden ✅")
+  ──────────────────────────────────────────────────────
+
+================================================================================
+  Priorität:  K1 und K2 sofort (kritisch),  K3-K6 zeitnah
+================================================================================

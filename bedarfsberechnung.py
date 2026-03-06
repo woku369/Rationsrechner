@@ -24,6 +24,14 @@ class PferdeParameter:
     diagnosen: list = field(default_factory=list)
         # mögliche Werte: EMS, Cushing, PSSM1, PSSM2, MIM, Hufrehe, COPD
 
+    # Individuelle Overrides (None = GfE-Standard)
+    override_energie_mj:  Optional[float] = None
+    override_rp_g:        Optional[float] = None
+    override_selen_mg:    Optional[float] = None
+    override_nsc_max_pct: Optional[float] = None
+    override_begruendung: Optional[str]   = None
+    raufutter_min_kg:     Optional[float] = None   # Verhaltensminimum Raufutter
+
 
 @dataclass
 class Bedarfswerte:
@@ -63,6 +71,7 @@ class Bedarfswerte:
     nsc_max_pct: Optional[float] = None   # max. NSC (Stärke+Zucker) in % der TS
     stärke_max_pct: Optional[float] = None
     trockenmasse_kg: float = 0.0         # empfohlene TS-Aufnahme/Tag
+    trockenmasse_quelle: str = "GfE Nährstoffbedarf"  # oder "Verhaltensminimum"
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +91,8 @@ NUTZUNGSFAKTOR_ENERGIE = {
 NUTZUNGSFAKTOR_PROTEIN = {
     "Freizeit":        1.10,
     "Leichte_Arbeit":  1.15,
-    "Mittlere_Arbeit": 1.25,
-    "Schwere_Arbeit":  1.40,
+    "Mittlere_Arbeit": 1.35,   # K3: GfE-Soll 900-1100g/500kg → 945g ✅
+    "Schwere_Arbeit":  1.60,   # K3: GfE-Soll 1200-1500g/600kg → 1344g ✅
 }
 
 # Rasse-/Typ-Korrekturfaktor auf Erhaltungsenergie
@@ -172,6 +181,13 @@ def berechne_bedarf(p: PferdeParameter) -> Bedarfswerte:
         tm_pct = 0.020
     else:
         tm_pct = 0.018
+
+    # K6: Jungpferde haben höhere TS-Aufnahme als adulte Pferde (GfE: <2J 2.5-3.5%)
+    if p.alter_jahre < 2:
+        tm_pct = 0.030
+    elif p.alter_jahre < 3:
+        tm_pct = 0.025
+
     b.trockenmasse_kg = kgw * tm_pct
 
     # ----------------------------------------------------------------
@@ -222,12 +238,23 @@ def berechne_bedarf(p: PferdeParameter) -> Bedarfswerte:
         b.rp_g *= 1.20
     if p.alter_jahre < 2:
         b.rp_g *= 1.30
+    elif p.alter_jahre < 3:   # K5: 2-3J noch aktiver Muskelaufbau
+        b.rp_g *= 1.10
+
+    # K4: Hengst – leicht erhöhter RP-Bedarf (Spermaproduktion + Muskelaufbau)
+    if p.geschlecht == "Hengst":
+        b.rp_g *= 1.05
 
     # Lysin: direkt über KGW (0.043 * RP-Brutto war ~2.5x zu hoch, da GfE-Faktor
     # sich auf verdauliches Protein nXP bezieht, nicht auf Brutto-RP)
     b.lysin_g = 0.030 * kgw * nf_p
     # Methionin analog: robuste KGW-basierte Formel
     b.methionin_g = 0.014 * kgw * nf_p
+
+    # K4: Lysin/Methionin-Zuschlag Hengst (nach Basisberechnung anwenden)
+    if p.geschlecht == "Hengst":
+        b.lysin_g     *= 1.05
+        b.methionin_g *= 1.05
 
     # ----------------------------------------------------------------
     # 4. MINERALSTOFFE
@@ -257,6 +284,14 @@ def berechne_bedarf(p: PferdeParameter) -> Bedarfswerte:
         b.phosphor_g  *= 1.50
         b.magnesium_g *= 1.40
 
+    # K1: Trächtigkeit – Ca/P-Zuschlag für Knochenaufbau des Fohlens (GfE 6. Aufl.)
+    if p.traechtigkeit >= 9:
+        b.calcium_g  *= 1.50   # GfE: letztes Drittel +50% Ca
+        b.phosphor_g *= 1.40
+    elif p.traechtigkeit >= 7:
+        b.calcium_g  *= 1.25
+        b.phosphor_g *= 1.20
+
     # ----------------------------------------------------------------
     # 5. SPURENELEMENTE (mg/Tag)
     # ----------------------------------------------------------------
@@ -264,7 +299,7 @@ def berechne_bedarf(p: PferdeParameter) -> Bedarfswerte:
     b.kupfer_mg  = max(100, 0.12 * kgw)
     b.zink_mg    = max(400, 0.40 * kgw)
     b.mangan_mg  = max(400, 0.40 * kgw)
-    b.selen_mg   = max(1.0,  0.0015 * kgw)
+    b.selen_mg   = max(0.5,  0.0015 * kgw)   # K2: Min 0.5 statt 1.0 – Toxgrenze Kleinpferde
     b.jod_mg     = max(3.5,  0.003 * kgw)
     b.kobalt_mg  = max(0.5,  0.0005 * kgw)
 
@@ -327,6 +362,25 @@ def berechne_bedarf(p: PferdeParameter) -> Bedarfswerte:
         b.nsc_max_pct = 10.0
         b.stärke_max_pct = 8.0
         b.biotin_mcg = max(b.biotin_mcg, 20000)  # Biotinbedarf bei Hufproblemen
+
+    # ----------------------------------------------------------------
+    # 9. INDIVIDUELLE OVERRIDES (überschreiben GfE-Berechnung)
+    # ----------------------------------------------------------------
+    if p.override_energie_mj is not None:
+        b.energie_mj = p.override_energie_mj
+    if p.override_rp_g is not None:
+        b.rp_g = p.override_rp_g
+    if p.override_selen_mg is not None:
+        b.selen_mg = p.override_selen_mg
+    if p.override_nsc_max_pct is not None:
+        b.nsc_max_pct = p.override_nsc_max_pct
+
+    # Verhaltensminimum Raufutter (schlägt GfE-TS wenn höher)
+    if p.raufutter_min_kg is not None:
+        raufutter_ts = p.raufutter_min_kg * 0.88   # Heu ~88% TS
+        if raufutter_ts > b.trockenmasse_kg:
+            b.trockenmasse_kg = raufutter_ts
+            b.trockenmasse_quelle = "Verhaltensminimum"
 
     return b
 

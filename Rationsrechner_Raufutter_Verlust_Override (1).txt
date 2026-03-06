@@ -1,0 +1,299 @@
+================================================================================
+  GURKTALER PFERDEFUTTER-RATIONSRECHNER
+  Erweiterung: Raufutter-Management & Individueller Erhaltungsbedarf
+  Erstellt: 06.03.2026
+================================================================================
+
+Hintergrund:
+  Zwei praxisrelevante Probleme die der GfE-Standard nicht abdeckt:
+
+  1. Pferde brauchen ~16-18h Fresszeit/Tag (Verhaltensebene).
+     Ein 500kg Freizeitpferd das 9kg Heu in 3-4h leer hat, entwickelt
+     Stereotypien. Das Raufutter-Minimum ist daher NICHT identisch mit
+     dem Energie-Trockenmasse-Bedarf.
+
+  2. Individueller Erhaltungsbedarf: Alte Pferde (insbesondere >20J) haben
+     oft einen deutlich höheren realen Bedarf als der GfE-Durchschnittswert.
+     Wenn ein Pferd bei korrekter GfE-Ration trotzdem Gewicht verliert,
+     muss der Bedarf manuell überschrieben werden können.
+
+  3. Raufutter-Verluste: In der Praxis wird nie die volle Menge gefressen.
+     10-20% Verlust durch Herausziehen, Eintreten, Selektieren sind normal.
+     Das Programm rechnet aktuell mit 100% Aufnahme – das führt zu
+     systematischer Unterschätzung der tatsächlich nötigen Futtermenge.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TEIL 1 – Datenbank: Felder für Pferd-Tabelle ergänzen
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  SQL – einmalig ausführen:
+  ─────────────────────────────────────────────────────────────────────────
+  -- Individueller Energiebedarf-Override (NULL = GfE-Standard)
+  ALTER TABLE pferde ADD COLUMN override_energie_mj   REAL    DEFAULT NULL;
+
+  -- Freitext-Begründung für den Override (wird in Auswertung angezeigt)
+  ALTER TABLE pferde ADD COLUMN override_begruendung  TEXT    DEFAULT NULL;
+
+  -- Minimum Raufutter pro Tag aus Verhaltensgründen (NULL = GfE-Standard)
+  ALTER TABLE pferde ADD COLUMN raufutter_min_kg      REAL    DEFAULT NULL;
+  ─────────────────────────────────────────────────────────────────────────
+
+  Beispiel Norbert:
+      override_energie_mj  = 75.0   -- statt GfE-Wert 58.6 (Norbert verliert
+                                       sonst trotz korrekter Ration Gewicht)
+      override_begruendung = 'Erhöhter individueller Erhaltungsbedarf (Senior,
+                              schlechte Futteraufschlüsselung). Beobachtet seit
+                              Winter 2025.'
+      raufutter_min_kg     = 15.0   -- Norbert braucht viel Raufutter damit er
+                                       den Tag über beschäftigt ist
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TEIL 2 – bedarfsberechnung.py: PferdeParameter und berechne_bedarf()
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  In PferdeParameter (Dataclass, oberer Teil der Datei) ergänzen:
+  ─────────────────────────────────────────────────────────────────────────
+  @dataclass
+  class PferdeParameter:
+      ...
+      # Individuelle Overrides (None = GfE-Standard verwenden)
+      override_energie_mj:  Optional[float] = None
+      override_begruendung: Optional[str]   = None
+      raufutter_min_kg:     Optional[float] = None   # Minimum aus Verhaltensgründen
+  ─────────────────────────────────────────────────────────────────────────
+
+  In berechne_bedarf() ganz am Ende (nach dem Senioren-Block, vor "return b"):
+  ─────────────────────────────────────────────────────────────────────────
+      # ----------------------------------------------------------------
+      # INDIVIDUELLE OVERRIDES (überschreiben GfE-Berechnung)
+      # ----------------------------------------------------------------
+      if p.override_energie_mj is not None:
+          b.energie_mj = p.override_energie_mj
+
+      # Raufutter-Minimum aus Verhaltensgründen:
+      # Wenn gesetzt, wird trockenmasse_kg auf das höhere der beiden Werte
+      # gesetzt – Verhaltensminimum schlägt Nährstoff-TS wenn es größer ist.
+      if p.raufutter_min_kg is not None:
+          # Raufutter-TS schätzen (Heu ~88% TS)
+          raufutter_ts = p.raufutter_min_kg * 0.88
+          if raufutter_ts > b.trockenmasse_kg:
+              b.trockenmasse_kg = raufutter_ts
+              b.trockenmasse_quelle = "Verhaltensminimum"   # für Anzeige (s.u.)
+          else:
+              b.trockenmasse_quelle = "GfE Nährstoffbedarf"
+      else:
+          b.trockenmasse_quelle = "GfE Nährstoffbedarf"
+
+      return b
+  ─────────────────────────────────────────────────────────────────────────
+
+  Dazu in der Bedarfswerte-Dataclass das Feld ergänzen:
+  ─────────────────────────────────────────────────────────────────────────
+  @dataclass
+  class Bedarfswerte:
+      ...
+      trockenmasse_quelle: str = "GfE Nährstoffbedarf"   # für Anzeige
+  ─────────────────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TEIL 3 – rationsrechner.py: Verlustfaktor pro Mahlzeit
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Konzept:
+    Der Besitzer gibt ein wie er füttert. Das Programm rechnet:
+      - Verabreichte Menge (was rausgelegt wird)
+      - Verlust % (was nicht gefressen wird)
+      - Aufgenommene Menge (was im Pferd landet) = Basis der Nährstoffrechnung
+
+  In der Rations-Datenbank-Tabelle (rationen) zwei Felder ergänzen:
+  ─────────────────────────────────────────────────────────────────────────
+  ALTER TABLE rationen ADD COLUMN heu_mahlzeiten     INTEGER DEFAULT 2;
+  ALTER TABLE rationen ADD COLUMN heu_verlust_pct    REAL    DEFAULT 0.0;
+  ─────────────────────────────────────────────────────────────────────────
+
+  Bedeutung:
+    heu_menge_kg    = Gesamtmenge verabreicht pro Tag (wie bisher)
+    heu_mahlzeiten  = Anzahl Mahlzeiten/Tag (z.B. 2 = morgens + abends)
+    heu_verlust_pct = geschätzter Verlust in % (z.B. 10 = 10% landet nicht im Pferd)
+
+  In rationsrechner.py in der Funktion die die Heu-Position aufbaut
+  (heu_als_position oder wo heu_menge_kg verwendet wird):
+  ─────────────────────────────────────────────────────────────────────────
+  def heu_als_position(qualitaet: dict, menge_kg: float,
+                       verlust_pct: float = 0.0) -> RationsPosition:
+      """
+      menge_kg:    Verabreichte Menge FM pro Tag (was hingelegt wird)
+      verlust_pct: Geschätzter Verlust in % (wird nicht gefressen)
+                   0 = alles gefressen, 10 = 10% Verlust
+      """
+      aufgenommen_kg = menge_kg * (1.0 - verlust_pct / 100.0)
+
+      # Alle weiteren Berechnungen mit aufgenommen_kg statt menge_kg
+      return RationsPosition(
+          ...
+          menge_kg         = aufgenommen_kg,    # Nährstoffrechnung
+          menge_verabreicht_kg = menge_kg,      # Anzeige "was kaufe ich ein"
+          verlust_pct      = verlust_pct,
+          ...
+      )
+  ─────────────────────────────────────────────────────────────────────────
+
+  In RationsPosition (Dataclass in rationsrechner.py) die Felder ergänzen:
+  ─────────────────────────────────────────────────────────────────────────
+  @dataclass
+  class RationsPosition:
+      ...
+      menge_verabreicht_kg: float = 0.0   # was hingelegt wird
+      verlust_pct:          float = 0.0   # Verlust in %
+      # menge_kg bleibt = aufgenommene Menge (Basis aller Nährstoffrechnungen)
+  ─────────────────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TEIL 4 – UI: rations_view.py – Eingabefelder und Anzeige
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Im Heu-Eingabebereich der Rationsmaske drei Felder ergänzen:
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Heu                                                            │
+  │  Qualität:      [Gering               ▼]                       │
+  │  Menge/Tag:     [15.0] kg FM  (verabreicht)                    │
+  │  Mahlzeiten:    [  2 ] /Tag   → 7.5 kg je Mahlzeit             │  ← NEU
+  │  Verlust:       [ 10 ] %      → aufgenommen: 13.5 kg FM        │  ← NEU
+  └─────────────────────────────────────────────────────────────────┘
+
+  Der Hinweis "aufgenommen: X kg FM" wird live berechnet und angezeigt
+  wenn der Benutzer die Felder ändert (QDoubleSpinBox valueChanged Signal).
+
+  Beispiel-Snippet für den valueChanged-Handler:
+  ─────────────────────────────────────────────────────────────────────────
+  def _aktualisiere_heu_hinweis(self):
+      menge     = self.heu_menge_spin.value()
+      mahlzeiten = self.heu_mahlzeiten_spin.value()
+      verlust   = self.heu_verlust_spin.value()
+      aufgenommen = menge * (1.0 - verlust / 100.0)
+      je_mahlzeit = menge / mahlzeiten if mahlzeiten > 0 else menge
+      self.heu_hinweis_label.setText(
+          f"→ {je_mahlzeit:.1f} kg je Mahlzeit  |  "
+          f"aufgenommen: {aufgenommen:.1f} kg FM/Tag  "
+          f"({aufgenommen * 0.88:.1f} kg TS)"
+      )
+  ─────────────────────────────────────────────────────────────────────────
+
+  Im Pferd-Bearbeiten-Dialog (kunden_view.py oder pferd_view) ergänzen:
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Individueller Energiebedarf                                    │
+  │  ○ GfE-Standard  (58.6 MJ/Tag)                                 │
+  │  ● Manuell:  [75.0] MJ/Tag                                     │
+  │  Begründung: [Verliert bei GfE-Ration Gewicht – Senior         ]│
+  └─────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Raufutter-Minimum (Verhalten)                                  │
+  │  ○ Automatisch (GfE TS-Bedarf)                                 │
+  │  ● Manuell:  [15.0] kg FM/Tag                                  │
+  │    ⓘ Pferd braucht mehr Raufutter als rechnerisch nötig        │
+  │      (Beschäftigung, Stereotypien-Prävention)                   │
+  └─────────────────────────────────────────────────────────────────┘
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TEIL 5 – Auswertung: Was wird angezeigt
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  In der Nährstofftabelle und im PDF-Export:
+
+  Trockenmasse:
+    Bedarf:   15.0 kg/Tag  ⓘ Verhaltensminimum         ← wenn Override aktiv
+    Ist:      13.5 kg/Tag  (aus 15kg - 10% Verlust)
+    ⚠ Hinweis: Verabreichte Menge 15.0 kg, aufgenommen 13.5 kg (10% Verlust)
+
+  Energie:
+    Bedarf:   75.0 MJ/Tag  ⓘ Individuell (Norbert verliert sonst Gewicht)
+    GfE-Wert: 58.6 MJ/Tag  (zur Information)
+    Ist:      ...
+
+  In export_module.py (PDF-Ausgabe) den Override-Hinweis einbauen:
+  ─────────────────────────────────────────────────────────────────────────
+  if p.override_energie_mj is not None:
+      zeilen.append(
+          f"* Energie-Bedarf individuell angepasst: {p.override_energie_mj:.1f} MJ "
+          f"(GfE-Standard wäre {gfe_energie:.1f} MJ). "
+          f"Begründung: {p.override_begruendung or 'keine Angabe'}"
+      )
+  ─────────────────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PRAXISBEISPIEL: Norbert nach dieser Erweiterung
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Eingabe in der Maske:
+    Heu Gering:         15.0 kg/Tag verabreicht
+    Mahlzeiten:          2  /Tag  → 7.5 kg je Mahlzeit
+    Verlust:            10  %     → aufgenommen: 13.5 kg FM = 11.9 kg TS
+    Energie-Override:   75.0 MJ   (statt GfE 58.6 MJ)
+    Raufutter-Minimum:  15.0 kg   (Norbert braucht viel Beschäftigung)
+
+  Was das Programm daraus macht:
+    Nährstoffrechnung mit 13.5 kg FM (nicht 15.0 kg)
+    Energiebedarf 75.0 MJ (nicht 58.6 MJ)
+    Trockenmasse-Bedarf: max(GfE 8.5kg TS, Minimum 15.0×0.88=13.2kg TS)
+                       = 13.2 kg TS  [Verhaltensminimum aktiv]
+
+  Ergebnis:
+    Energie-Lücke: 75.0 MJ Bedarf, ~107 MJ Ist → noch immer Überschuss,
+    aber der Override macht den Besitzer darauf aufmerksam dass Norbert
+    energetisch einen höheren Bedarf hat als der GfE-Standard.
+    Wenn die Ration nicht reicht → Basisfutter erhöhen.
+
+    Trockenmasse: Bedarf 13.2 kg (Verhaltensminimum), Ist 11.9 kg → Lücke!
+    → Programm zeigt: "Raufutter für Beschäftigung nicht ausreichend.
+      Empfehlung: Heumenge erhöhen oder Fresszeit verlängern (Heunetz)."
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ABSCHLUSSKONTROLLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  SQL-Checks nach den ALTER TABLE Befehlen:
+  ─────────────────────────────────────────────────────────────────────────
+  PRAGMA table_info(pferde);
+  -- override_energie_mj, override_begruendung, raufutter_min_kg müssen auftauchen
+
+  PRAGMA table_info(rationen);
+  -- heu_mahlzeiten, heu_verlust_pct müssen auftauchen
+  ─────────────────────────────────────────────────────────────────────────
+
+  Python-Test:
+  ─────────────────────────────────────────────────────────────────────────
+  from bedarfsberechnung import PferdeParameter, berechne_bedarf
+
+  # Override aktiv
+  p = PferdeParameter(
+      gewicht_kg=500, alter_jahre=26, rasse_typ='Quarter Horse',
+      nutzung='Freizeit', geschlecht='Wallach',
+      override_energie_mj=75.0,
+      override_begruendung='Verliert bei GfE-Ration Gewicht',
+      raufutter_min_kg=15.0
+  )
+  b = berechne_bedarf(p)
+  assert b.energie_mj == 75.0, f"Override nicht angewendet: {b.energie_mj}"
+  assert b.trockenmasse_kg >= 13.0, f"Verhaltensminimum nicht angewendet: {b.trockenmasse_kg}"
+  assert b.trockenmasse_quelle == "Verhaltensminimum"
+  print(f"✅  Energie: {b.energie_mj} MJ  |  TS: {b.trockenmasse_kg:.1f} kg ({b.trockenmasse_quelle})")
+
+  # Verlustrechnung
+  menge_verabreicht = 15.0
+  verlust_pct = 10.0
+  aufgenommen = menge_verabreicht * (1 - verlust_pct / 100)
+  assert abs(aufgenommen - 13.5) < 0.01
+  print(f"✅  Verlust: {menge_verabreicht}kg → aufgenommen {aufgenommen}kg")
+  ─────────────────────────────────────────────────────────────────────────
+
+================================================================================

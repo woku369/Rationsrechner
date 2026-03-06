@@ -113,6 +113,7 @@ def export_xlsx(pferd: dict, bedarf, ist, differenz,
         ("Kupfer",         "mg/Tag",  bedarf.kupfer_mg,          ist.kupfer_mg,        True),
         ("Zink",           "mg/Tag",  bedarf.zink_mg,            ist.zink_mg,          True),
         ("Mangan",         "mg/Tag",  bedarf.mangan_mg,          ist.mangan_mg,        True),
+        ("Eisen",          "mg/Tag",  bedarf.eisen_mg,           ist.eisen_mg,         True),
         ("Selen",          "mg/Tag",  bedarf.selen_mg,           ist.selen_mg,         True),
         ("Vitamin E",      "mg/Tag",  bedarf.vit_e_mg,           ist.vit_e_mg,         True),
     ]
@@ -222,7 +223,7 @@ def export_pdf(pferd: dict, bedarf, ist, differenz,
     # Vergleichstabelle
     story.append(Paragraph("Nährstoffvergleich: Bedarf vs. Ist", style_h2))
 
-    vergl_data = [["Parameter", "Einheit", "Bedarf", "Ist", "Differenz", "Status"]]
+    vergl_data = [["Parameter", "Einheit", "Bedarf", "Ist", "Diff %", "Status"]]
     kennzahlen = [
         ("Trockenmasse",  "kg/Tag",  bedarf.trockenmasse_kg, ist.trockenmasse_kg),
         ("Energie",       "MJ/Tag",  bedarf.energie_mj,      ist.energie_mj),
@@ -235,6 +236,7 @@ def export_pdf(pferd: dict, bedarf, ist, differenz,
         ("Kupfer",        "mg/Tag",  bedarf.kupfer_mg,       ist.kupfer_mg),
         ("Zink",          "mg/Tag",  bedarf.zink_mg,         ist.zink_mg),
         ("Mangan",        "mg/Tag",  bedarf.mangan_mg,       ist.mangan_mg),
+        ("Eisen",         "mg/Tag",  bedarf.eisen_mg,        ist.eisen_mg),
         ("Selen",         "mg/Tag",  bedarf.selen_mg,        ist.selen_mg),
         ("Vitamin E",     "mg/Tag",  bedarf.vit_e_mg,        ist.vit_e_mg),
     ]
@@ -242,15 +244,17 @@ def export_pdf(pferd: dict, bedarf, ist, differenz,
     row_colors = []
     for i, (name, einheit, bed_val, ist_val) in enumerate(kennzahlen, 1):
         diff = ist_val - bed_val
+        diff_pct = (diff / bed_val * 100) if bed_val else 0.0
+        pct_str = f"{diff_pct:+.0f} %"
         status = "✓ gedeckt" if diff >= 0 else "⚠ Mangel"
         vergl_data.append([
             name, einheit,
             f"{bed_val:.2f}", f"{ist_val:.2f}",
-            f"{diff:+.2f}", status
+            pct_str, status
         ])
         row_colors.append(GRUEN if diff >= 0 else ROT)
 
-    vergl_table = Table(vergl_data, colWidths=[4.5*cm, 2.5*cm, 3*cm, 3*cm, 3*cm, 4*cm])
+    vergl_table = Table(vergl_data, colWidths=[4.5*cm, 2.2*cm, 2.5*cm, 2.5*cm, 2.5*cm, 3.8*cm])
     ts = TableStyle([
         ("BACKGROUND",  (0,0), (-1,0), DUNKELBLAU),
         ("TEXTCOLOR",   (0,0), (-1,0), colors.white),
