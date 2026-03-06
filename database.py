@@ -439,6 +439,15 @@ def _seed_markenfuttermittel(conn: sqlite3.Connection):
     Fügt Marken-Futtermittel ein, die noch nicht in der DB sind (anhand Name+Hersteller).
     Werte (Agrobs) von Herstellerwebsite, Stand 07/2025, umgerechnet auf kg TS (÷ 0,88 bei 12% Wasser).
     St. Hippolyt / WES: Inhaltsstoffe werden via JS geladen → Werte manuell zu ergänzen.
+
+    Enthaltene Producto (Stand 07/2025):
+     Agrobs (bestehend): PRE ALPIN Wiesencobs, Wiesenflakes, Senior, AlpenGrün Müsli,
+                         MYO Protein Flakes, Protein Light Flakes, Luzernecobs
+     Agrobs (neu):       Aspero, Bio Wiesencobs, AlpenGrün Mash, compact,
+                         LeichtGenuss, AlpenHeu, Stroh, Luzerne+, Grünhafer
+     St. Hippolyt:       Glyx-Mash (Platzhalter), WES Sensitive Bodyguard (Platzhalter),
+                         MicroVital (Platzhalter), GlyxWiese Seniorfaser (Schätzwert)
+     Rohstoffe:          Rapsöl
     """
 
     def _exists(name: str, hersteller: str) -> bool:
@@ -606,6 +615,124 @@ def _seed_markenfuttermittel(conn: sqlite3.Connection):
     ]
 
     for eintrag in hippolyt_platzhalter:
+        if not _exists(eintrag[0], eintrag[1]):
+            conn.execute(INSERT_SQL, eintrag)
+
+    # ==================================================================
+    # AGROBS – NEUE Produkte (Stand 07/2025, je kg TS, ÷ 0,88)
+    # Alle Angaben wurden von den Einzelproduktseiten agrobs.de abgerufen.
+    # ==================================================================
+    agrobs_neu = [
+        # ---- PRE ALPIN Aspero ------------------------------------------
+        # FM: RP 5,30 | RFett 2,10 | RF 29,50 | ME 6,30 | Stk 1,80 | Zuk 7,40
+        #     Ca 0,40 | P 0,20 | Na 0,02
+        # Häcksel aus Wiesengräsern+Kräutern + Lein-/Leindotteröl; strukturreich
+        ("PRE ALPIN Aspero", "Agrobs", "Raufutter", "Häcksel", 12.0,
+         7.16,  6.02, None, None,
+         2.39, 33.52, 2.05,  8.41, 10.45,
+         4.55,  2.27, None,  0.23, None,
+         None, None, None, None, None, None,
+         None, None, None, None, None,
+         "Herstellerangabe agrobs.de 07/2025"),
+
+        # ---- PRE ALPIN Bio Wiesencobs® ---------------------------------
+        # FM: RP 11,50 | RFett 2,70 | RF 25,00 | ME 6,60 | Stk 2,90 | Zuk 6,30
+        #     Ca 0,70 | P 0,20 | Na 0,02
+        # Bio-zertifiziert (DE-ÖKO); gleiche Wiesen wie konventionell, BIO-Qualität
+        ("PRE ALPIN Bio Wiesencobs\u00ae", "Agrobs", "Raufutter", "Heucobs", 12.0,
+         7.50, 13.07, None, None,
+         3.07, 28.41, 3.30,  7.16, 10.45,
+         7.95,  2.27, None,  0.23, None,
+         None, None, None, None, None, None,
+         None, None, None, None, None,
+         "Herstellerangabe agrobs.de 07/2025"),
+
+        # ---- AlpenGrün Mash --------------------------------------------
+        # FM: RP 12,70 | RFett 3,60 | RF 20,80 | ME 8,10 | Stk 1,70 | Zuk 9,50
+        #     Ca 0,50 | P 0,30 | Na 0,05
+        # Darmgesundheit/Prebiotik; getreidefrei, tägl. geeignet; Ca:P ≈ 2:1
+        ("AlpenGr\u00fcn Mash", "Agrobs", "Kraftfutter", "Mash", 12.0,
+         9.20, 14.43, None, None,
+         4.09, 23.64, 1.93, 10.80, 12.73,
+         5.68,  3.41, None,  0.57, None,
+         None, None, None, None, None, None,
+         None, None, None, None, None,
+         "Herstellerangabe agrobs.de 07/2025"),
+
+        # ---- PRE ALPIN compact -----------------------------------------
+        # FM: RP 7,10 | RFett 1,80 | RF 27,40 | ME 6,50 | Stk 1,90 | Zuk 10,60
+        #     Ca 0,50 | P 0,22 | Na 0,02
+        # Gepresste Quader (14×16×8 cm); für unterwegs/Turniere; melassefrei
+        ("PRE ALPIN compact", "Agrobs", "Raufutter", "Heucobs", 12.0,
+         7.39,  8.07, None, None,
+         2.05, 31.14, 2.16, 12.05, 14.20,
+         5.68,  2.50, None,  0.23, None,
+         None, None, None, None, None, None,
+         None, None, None, None, None,
+         "Herstellerangabe agrobs.de 07/2025"),
+
+        # ---- LeichtGenuss ----------------------------------------------
+        # FM: RP 9,30 | RFett 2,10 | RF 28,70 | ME 6,40 | Stk 2,00 | Zuk 8,20
+        #     Ca 0,50 | P 0,30 | Na 0,03
+        # Für EMS/PPID/Übergewicht; Grünhafer+Stroh+Wiesengräser; energiearm
+        ("LeichtGenuss", "Agrobs", "Raufutter", "H\u00e4cksel", 12.0,
+         7.27, 10.57, None, None,
+         2.39, 32.61, 2.27,  9.32, 11.59,
+         5.68,  3.41, None,  0.34, None,
+         None, None, None, None, None, None,
+         None, None, None, None, None,
+         "Herstellerangabe agrobs.de 07/2025"),
+
+        # ---- AlpenHeu --------------------------------------------------
+        # FM: RP 6,40 | RFett 1,60 | RF 28,50 | ME 6,10 | Stk 1,80 | Zuk 6,00
+        #     Ca 0,30 | P 0,20 | Na 0,02
+        # Warmluft+sonnengetrocknet; entstaubt; bis 15 cm Faserlänge
+        ("AlpenHeu", "Agrobs", "Raufutter", "Heu", 12.0,
+         6.93,  7.27, None, None,
+         1.82, 32.39, 2.05,  6.82,  8.86,
+         3.41,  2.27, None,  0.23, None,
+         None, None, None, None, None, None,
+         None, None, None, None, None,
+         "Herstellerangabe agrobs.de 07/2025"),
+
+        # ---- Stroh (Agrobs) --------------------------------------------
+        # FM: RP 2,50 | RFett 0,90 | RF 40,60 | ME 4,00 | Stk 2,00 | Zuk 3,00
+        #     Ca 0,30 | P 0,06 | Na 0,01
+        # Gersten-/Weizenstroh; warmluftgetrocknet+entstaubt; sehr eiweißarm
+        ("Stroh", "Agrobs", "Raufutter", "Stroh", 12.0,
+         4.55,  2.84, None, None,
+         1.02, 46.14, 2.27,  3.41,  5.68,
+         3.41,  0.68, None,  0.11, None,
+         None, None, None, None, None, None,
+         None, None, None, None, None,
+         "Herstellerangabe agrobs.de 07/2025"),
+
+        # ---- Luzerne+ --------------------------------------------------
+        # FM: RP 10,00 | RFett 2,40 | RF 38,40 | ME 4,90 | Stk 2,00 | Zuk 5,60
+        #     Ca 0,68 | P 0,25 | Na 0,02
+        # Luzerne:Grünhafer 4:1; Leinöl; für Sportpferde/Aufbau; stärkarm
+        ("Luzerne+", "Agrobs", "Raufutter", "H\u00e4cksel", 12.0,
+         5.57, 11.36, None, None,
+         2.73, 43.64, 2.27,  6.36,  8.64,
+         7.73,  2.84, None,  0.23, None,
+         None, None, None, None, None, None,
+         None, None, None, None, None,
+         "Herstellerangabe agrobs.de 07/2025"),
+
+        # ---- Grünhafer -------------------------------------------------
+        # FM: RP 12,50 | RFett 2,00 | RF 25,80 | ME 6,70 | Stk 2,00 | Zuk 5,80
+        #     Ca 0,31 | P 0,35 | Na 0,04
+        # Ganze Haferpflanze vor Stärkeeinlagerung; Getreideersatz; Ca:P ≈ 0,9
+        ("Gr\u00fcnhafer", "Agrobs", "Raufutter", "H\u00e4cksel", 12.0,
+         7.61, 14.20, None, None,
+         2.27, 29.32, 2.27,  6.59,  8.86,
+         3.52,  3.98, None,  0.45, None,
+         None, None, None, None, None, None,
+         None, None, None, None, None,
+         "Herstellerangabe agrobs.de 07/2025"),
+    ]
+
+    for eintrag in agrobs_neu:
         if not _exists(eintrag[0], eintrag[1]):
             conn.execute(INSERT_SQL, eintrag)
 
