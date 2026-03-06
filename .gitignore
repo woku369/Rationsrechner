@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual Environments
+venv/
+env/
+.env/
+.venv/
+
+# Distribution / Packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Logs & Tests
+*.log
+test_out.txt
+test_err.txt
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Dokumente / Sensible Dateien
+*.pdf
+
+# Datenbanken
+*.db
+*.sqlite
+*.sqlite3

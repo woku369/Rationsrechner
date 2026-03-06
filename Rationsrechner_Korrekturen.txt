@@ -1,0 +1,300 @@
+================================================================================
+  GURKTALER PFERDEFUTTER-RATIONSRECHNER
+  Korrekturen & Todo-Liste
+  Erstellt: 05.03.2026 | Basis: Plausibilitätsprüfung Norbert (500kg QH, 26J)
+================================================================================
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BLOCK 1 – bedarfsberechnung.py   (3 Korrekturen)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] 1.1  NUTZUNGSFAKTOR_ENERGIE – Freizeit-Faktor korrigieren
+         -------------------------------------------------------
+         Datei:   bedarfsberechnung.py
+         Zeile:   ~74 (Dict NUTZUNGSFAKTOR_ENERGIE)
+
+         IST:
+             "Freizeit":        1.20,
+             "Leichte_Arbeit":  1.35,
+             "Mittlere_Arbeit": 1.60,
+             "Schwere_Arbeit":  1.90,
+
+         SOLL:
+             "Freizeit":        1.10,   # GfE: Erhaltung=1.0, Freizeit/Weidegang max. 1.10
+             "Leichte_Arbeit":  1.25,   # nach unten anpassen wegen verschobener Skala
+             "Mittlere_Arbeit": 1.50,
+             "Schwere_Arbeit":  1.85,
+
+         WARUM:
+             GfE 2014 definiert den Erhaltungsbedarf als Faktor 1.0.
+             Faktor 1.20 entspricht laut GfE bereits "leichter Arbeit".
+             Freizeit/Weidegang = 1.10 ist der korrekte GfE-Wert.
+             Für Norbert (500kg): 63.9 MJ → korrigiert 58.6 MJ (16% Fehler).
+
+         AUSWIRKUNG:
+             Energiebedarf aller Freizeitpferde bisher 16% zu hoch.
+             Leichte Arbeit bisher ebenfalls leicht überschätzt.
+
+
+[ ] 1.2  Lysin-Berechnungsformel korrigieren
+         -------------------------------------------------------
+         Datei:   bedarfsberechnung.py
+         Zeile:   ~226
+
+         IST:
+             b.lysin_g = b.rp_g * 0.043
+
+         SOLL:
+             b.lysin_g = 0.030 * kgw * nf_p
+
+         WARUM:
+             Der Faktor 0.043 * RP-Brutto stammt aus der GfE, bezieht sich dort
+             aber auf verdauliches Protein (nXP), NICHT auf Brutto-Rohprotein.
+             Da hier Brutto-RP verwendet wird, ist der Lysin-Bedarf rund 2.5x
+             zu hoch. Norbert: 38 g berechnet vs. korrekt ~19 g.
+             Direkte Berechnung über KGW ist robuster:
+               Erhaltung: 0.030 * KGW
+               + Nutzungsfaktor nf_p (gleiche Logik wie beim RP)
+
+         AUSWIRKUNG:
+             Lysin-Defizit in der Rationsauswertung ist derzeit ein Rechenartifakt.
+             Echtes Lysin-Defizit existiert in dieser Ration nicht.
+             Methionin-Formel direkt darunter analog prüfen und ggf. angleichen:
+               b.methionin_g = 0.014 * kgw * nf_p
+
+
+[ ] 1.3  Vitamin A im Bedarfswert ergänzen (ist vorhanden, aber Heu liefert 0)
+         -------------------------------------------------------
+         Datei:   bedarfsberechnung.py
+         Zeile:   ~281  (Vitamine-Block)
+
+         KEIN Code-Fehler – Bedarfswert ist korrekt:
+             b.vit_a_ie = 44 * kgw   →  22.000 IE/Tag für 500kg
+
+         PROBLEM:
+             Heu hat keinen Vitamin-A-Wert hinterlegt (rationsrechner.py,
+             Funktion heu_als_position) → Ist-Wert bleibt 0 → scheinbares
+             100%-Defizit. Betrifft ALLE Rationen mit Heu als Hauptfutter.
+
+         FIX: → Siehe Block 2, Punkt 2.1
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BLOCK 2 – rationsrechner.py   (2 Korrekturen)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] 2.1  heu_als_position – Vitamin A und Selen ergänzen
+         -------------------------------------------------------
+         Datei:   rationsrechner.py
+         Funktion: heu_als_position (Ende der Funktion, ab Zeile ~242)
+
+         IST (kein Eintrag für vit_a_ie und selen niedrig):
+             selen_mg        = 0.05,
+             vit_e_mg        = 20.0,
+             # kein vit_a_ie
+
+         SOLL:
+             selen_mg        = 0.05,    # bleibt – konservativ, OK
+             vit_e_mg        = 20.0,    # bleibt – konservativ (gelagertes Heu)
+             vit_a_ie        = 1500.0,  # DLG-Mittelwert Wiesenheu: 800-2500 IE/kg TS
+                                        # konservativer Schätzwert 1500 IE/kg TS
+
+         WARUM:
+             Ohne vit_a_ie = 0 erscheint immer ein 100%-Defizit bei Vitamin A.
+             Für Norbert: 13.2 kg TS × 1500 IE = 19.800 IE → fast genau Bedarf.
+             Hinweis: Vitamin A zerfällt im Heu. Frisches Heu: bis 4000 IE/kg TS.
+             Nach 6 Monaten Lagerung: unter 1000 IE/kg TS.
+             1500 IE/kg TS ist ein konservativer aber realistischer Mittelwert.
+
+
+[ ] 2.2  Warnung bei TS-Überversorgung ausgeben
+         -------------------------------------------------------
+         Datei:   rationsrechner.py
+         Funktion: berechne_differenz
+
+         IST:
+             Keine Prüfung ob TS-Ist den TS-Bedarf überschreitet.
+
+         SOLL – folgende Prüfung am Ende von berechne_differenz ergänzen:
+
+             # TS-Überschreitung warnen (>120% = kritisch)
+             dif.ts_ueberschreitung_pct = 0.0
+             if bedarf.trockenmasse_kg > 0:
+                 dif.ts_ueberschreitung_pct = (
+                     ist.trockenmasse_kg / bedarf.trockenmasse_kg * 100
+                 )
+
+         Dazu in der Klasse DifferenzWerte (oberer Teil der Datei) das Feld
+         ergänzen:
+             ts_ueberschreitung_pct: float = 0.0
+
+         Und in der View / Ausgabe eine Warnung zeigen wenn > 120%.
+
+         WARUM:
+             Norbert bekommt 15.5 kg TS, braucht 8.5 kg TS → 181%.
+             Dadurch erscheinen Ca/P/Mg/Mangan/Kalium massiv erhöht –
+             das ist kein Mineralstoffproblem sondern ein Mengen-Problem.
+             Ohne diese Warnung ist die Interpretation der Mineralwerte irreführend.
+             Konkreter Hinweis an Norbert: 15 kg Heu ist zu viel für einen
+             500 kg Freizeitwallach. 8-10 kg (ohne Weide) wären korrekt.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BLOCK 3 – Datenbank rationsrechner.db   (2 Korrekturen)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[ ] 3.1  Rapsöl-Duplikate bereinigen (DRINGEND)
+         -------------------------------------------------------
+         Datenbank: rationsrechner.db, Tabelle: futtermittel
+
+         IST:
+             Rapsöl ist 20x eingetragen (IDs: 22,23,24,25,26,27,29,31,33,35,
+             37,38,39,40,41,42,43,44,45,46).
+             Beim letzten Check (vor 2 Tagen) waren es noch 8 Einträge.
+             Die Duplikate entstehen durch einen Bug im Speichern-Button
+             der Futtermittel-View (mehrfaches INSERT statt einmaligem).
+
+         SQL-FIX (nur einmal ausführen, danach den Code-Bug fixen):
+             DELETE FROM futtermittel
+             WHERE name = 'Rapsöl' AND id != 22;
+
+             UPDATE futtermittel SET
+                 vit_e_mg = 170.0,    -- Rapsöl: ~17 mg/100g = 170 mg/kg
+                 kupfer_mg = 0.0,
+                 zink_mg = 0.0,
+                 mangan_mg = 0.0,
+                 selen_mg = 0.0
+             WHERE id = 22;
+
+         CODE-BUG (Ursache der Duplikate):
+             Datei: views/futtermittel_view.py
+             Suche nach dem Speichern/Bestätigen-Button-Handler.
+             Wahrscheinlich wird database.speichere_futtermittel() mehrfach
+             aufgerufen (z.B. durch Signal-Verbindung die doppelt registriert
+             wird). Prüfen ob clicked.connect() mehrfach auf denselben Button
+             angewendet wird. Fix: vor dem connect() einmal disconnect() aufrufen
+             oder clicked.connect mit einem Guard versehen.
+
+
+[ ] 3.2  Testdatensatz entfernen
+         -------------------------------------------------------
+         Datenbank: rationsrechner.db, Tabelle: futtermittel
+
+         SQL:
+             DELETE FROM futtermittel WHERE name = '__TEST_MISCH__';
+
+         (ID 30, komplett leer, kein Produktionsdatensatz)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  BLOCK 4 – Zurückgestellt / Nice-to-have
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Diese Punkte sind bekannt aber nicht kritisch für die Grundfunktion:
+
+  [ ] 4.1  Agrobs-Produkte: Cu, Zn, Se, Vit E fehlen bei 7 Produkten
+           → Werte beim Hersteller anfragen oder Webseite agrobs.de
+
+  [ ] 4.2  St. Hippolyt Glyx-Mash® und MicroVital®: komplett leer
+           → Daten unbedingt nachpflegen, besonders MicroVital® (Mineralfutter!)
+
+  [ ] 4.3  GlyxWiese® Seniorfaser: Cu, Zn, Se, Vit E fehlen
+
+  [ ] 4.4  COPD-Diagnose: Logik noch nicht implementiert
+           → Hinweistexte zu staubarmem Füttern ergänzen
+
+  [ ] 4.5  Allergie-Diagnose: Konzept noch nicht ausgearbeitet
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ABSCHLUSSKONTROLLE – nach dem Fixen prüfen
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Folgende Werte mit Norbert (500kg QH, 26J, Freizeit, Wallach, keine Diagnosen)
+  Ration: 10 kg Heu (Gering) + 2.5 kg Basisfutter + 70g WES Bodyguard
+  (Heumenge auf 10 kg reduziert um TS-Überversorgung zu vermeiden)
+
+  ERWARTETE BEDARFSWERTE nach Fix:
+  ┌─────────────────────┬──────────────────────────────────────────────────┐
+  │ Energie             │ 55–60 MJ/Tag  (war 63.9 → nach Fix ~58.6)       │
+  │ Rohprotein          │ 880–890 g/Tag (bleibt, Senior-Zuschlag korrekt)  │
+  │ Lysin               │ 18–20 g/Tag   (war 38 → nach Fix ~19)           │
+  │ Calcium             │ 20 g/Tag      (unveränderter Koeffizient)        │
+  │ Phosphor            │ ~17 g/Tag     (inkl. Senior +10%)                │
+  │ Kupfer              │ 100 mg/Tag                                       │
+  │ Zink                │ 400 mg/Tag                                       │
+  │ Selen               │ 1.0 mg/Tag                                       │
+  │ Vitamin E           │ 600 mg/Tag    (500mg × 1.20 Senior)              │
+  └─────────────────────┴──────────────────────────────────────────────────┘
+
+  ERWARTETE IST-WERTE bei 10kg Heu + 2.5kg Basisfutter + 70g WES:
+  ┌─────────────────────┬──────────────────────────────────────────────────┐
+  │ Energie             │ ~85–90 MJ  (Heu Gering + Basisfutter)            │
+  │                     │ HINWEIS: immer noch über Bedarf → Heumenge oder  │
+  │                     │ Basisfutter reduzieren wenn Norbert zunimmt      │
+  │ Calcium             │ ~55 g  (noch erhöht, Ca-Bedarf wird durch Heu    │
+  │                     │ immer übertroffen – ist bei Heufütterung normal) │
+  │ Kupfer              │ ~80–85 mg  (leicht unter Bedarf → WES notwendig) │
+  │ Lysin               │ ~7–9 g  (unter Bedarf – Rapsöl oder Luzerne als  │
+  │                     │ Lysin-Quelle erwägen)                            │
+  │ Vitamin A           │ ~14.000–17.000 IE  (nach Heu-Fix, ~75% Bedarf)  │
+  │                     │ → WES enthält Vit A? Prüfen ob Lücke bleibt      │
+  └─────────────────────┴──────────────────────────────────────────────────┘
+
+  SCHNELLTEST nach Fix (in Python-Konsole oder Unit-Test):
+  ──────────────────────────────────────────────────────────────────────────
+  from bedarfsberechnung import PferdeParameter, berechne_bedarf
+
+  p = PferdeParameter(
+      gewicht_kg=500, alter_jahre=26,
+      rasse_typ='Quarter Horse', nutzung='Freizeit',
+      geschlecht='Wallach'
+  )
+  b = berechne_bedarf(p)
+
+  assert 55 <= b.energie_mj <= 61,   f"Energie falsch: {b.energie_mj}"
+  assert 17 <= b.lysin_g   <= 21,    f"Lysin falsch: {b.lysin_g}"
+  assert 880 <= b.rp_g     <= 900,   f"RP falsch: {b.rp_g}"
+  assert b.vit_e_mg == 600,          f"VitE falsch: {b.vit_e_mg}"
+  print("Alle Checks bestanden ✅")
+  ──────────────────────────────────────────────────────────────────────────
+
+  DATENBANK-CHECKS nach Fix:
+  ──────────────────────────────────────────────────────────────────────────
+  -- Nur noch 1 Rapsöl-Eintrag:
+  SELECT COUNT(*) FROM futtermittel WHERE name = 'Rapsöl';
+  -- Erwartetes Ergebnis: 1
+
+  -- Testdatensatz weg:
+  SELECT COUNT(*) FROM futtermittel WHERE name = '__TEST_MISCH__';
+  -- Erwartetes Ergebnis: 0
+
+  -- Rapsöl hat Vit E:
+  SELECT vit_e_mg FROM futtermittel WHERE name = 'Rapsöl';
+  -- Erwartetes Ergebnis: 170.0
+  ──────────────────────────────────────────────────────────────────────────
+
+
+================================================================================
+  PRIORITÄT-REIHENFOLGE (falls zeitlich knapp)
+================================================================================
+
+  SOFORT (Rechenfehlergrenzen werden verletzt):
+    → 1.1  Freizeit-Faktor 1.20 → 1.10
+    → 1.2  Lysin-Formel 0.043*RP → 0.030*KGW*nf_p
+    → 3.1  Rapsöl-Duplikate + Code-Bug im Speichern-Button
+
+  HEUTE NOCH (Daten fehlen, Ausgabe irreführend):
+    → 2.1  Vitamin A ins Heu eintragen
+    → 2.2  TS-Überversorgungswarnung einbauen
+    → 3.2  Testdatensatz löschen
+
+  DIESE WOCHE (Datenlücken, Hersteller anfragen):
+    → 4.1  Agrobs Spurenelemente
+    → 4.2  St. Hippolyt Werte vervollständigen
+
+================================================================================
+  Ende der Korrekturdatei
+  Bei Fragen: Rücksprache mit Auftraggeber (Analyse-Basis: Claude Sonnet 4.6)
+================================================================================

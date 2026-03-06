@@ -1,0 +1,91 @@
+??  Gurktaler Pferdefutter-Rationsrechner
+Projekt-Analyse & Fehlerbericht
+Stand: 05.03.2026  |  Analyse durch Claude Sonnet 4.6
+1.  Gesamtübersicht
+Das Projekt hat eine solide Grundarchitektur und ist in der richtigen Richtung. Die Modularisierung in bedarfsberechnung.py, rationsrechner.py, database.py und die PyQt6-GUI ist gut durchdacht. Es gibt jedoch drei kritische Fehler, die das Ergebnis der Rationsberechnung direkt verfälschen, sowie mehrere Datenlücken in der Futtermitteldatenbank.
+
+BereichStatusKurzbefundProjektstruktur / Architektur? OKKlare Modulaufteilung, SQLite gut gewähltDatenbankschema?? WarnungSchema vollständig, aber Duplikate & LeerdatenBedarfsberechnung – Energie? OKGfE-konforme Formel, Rassenfaktoren vorhandenBedarfsberechnung – Rohprotein? FehlerWert ~60% zu hoch (1150 g statt ~720 g)Bedarfsberechnung – Lysin? FehlerFolge-Fehler aus RP-Bug (49 g statt ~27 g)Bedarfsberechnung – Mineralstoffe? OKGrundformel korrekt, Zuschläge plausibelBedarfsberechnung – Senioren?? LückeKeine Anpassung für Pferde >20 JahreErkrankungen – EMS / Cushing / PSSM? OKNSC-Limits und Mineralzuschläge implementiertErkrankungen – Hufrehe / COPD / Allergie?? LückeIm Code erkannt, aber keine Logik hinterlegtFuttermitteldaten – Rohstoffe? OK7 Rohstoffe vollständig befülltFuttermitteldaten – Agrobs-Produkte?? Warnung7 Produkte ohne Cu, Zn, Se, Vit EFuttermitteldaten – St. Hippolyt? FehlerGlyx-Mash® und MicroVital® komplett leerRapsöl – Duplikate? Fehler8× identisch eingetragen (ID 22–35)Heu-Berechnung?? WarnungVereinfachte Fixwerte, Kalium zu hoch angesetztOCR-Etikett-Import? OKSolide Basis, regex-Parser gut strukturiertGUI / PyQt6? OKModernes Design, Sidebar-Navigation funktional
+2.  Kritische Fehler (sofort beheben)
+2.1  Rohprotein-Bedarf massiv überschätzt
+Datei: bedarfsberechnung.py, Zeile ~92
+Ist-Verhalten: Für einen 500 kg Freizeit-Wallach (Quarter Horse) errechnet das System 1.150 g Rohprotein/Tag. Der korrekte GfE-Wert liegt bei ca. 720–750 g/Tag für Erhaltung.
+
+Fehlerhafte Zeileb.rp_g = 2.2 * kgw * rf * nf_p / rf * rfPython-Auswertung= 2.2 × 500 × 0,95 × 1,10 / 0,95 × 0,95  ?  1.150 gProblem 1Der rf-Faktor wird erst dividiert, dann wieder multipliziert – effektiv bleibt er drin, das war vermutlich unbeabsichtigtProblem 2Der Basiskoeffizient 2,2 g/kg KGW ist zu hoch. GfE empfiehlt 1,3–1,5 g/kg für ErhaltungKorrekte Formelb.rp_g = 1.4 * kgw * nf_p  (ohne Rassenfaktor – RP-Bedarf ist nicht rasseabhängig)Korrektes Ergebnis1,4 × 500 × 1,10 = 770 g/Tag  ?
+2.2  Lysin-Bedarf als Folge-Fehler ebenfalls falsch
+Lysin wird als Prozentsatz des Rohproteins berechnet (4,3 %). Da der RP-Wert falsch ist, ist Lysin automatisch auch falsch: 49,4 g statt korrekter ~27 g/Tag. Dieser Fehler verschwindet automatisch wenn Problem 2.1 behoben wird.
+
+2.3  Futtermittel-Duplikate in der Datenbank
+Rapsöl ist acht Mal eingetragen (IDs 22, 23, 24, 25, 26, 27, 29, 31, 33, 35). Das verursacht Verwirrung in der Produktauswahl und fehlerhafte Berechnungen wenn mehrere Einträge gleichzeitig in einer Ration landen. Alle Einträge haben außerdem keine Spurenelement-Daten.
+• Sofortmaßnahme: alle Duplikate außer einem löschen
+• Dann Spurenelemente für Rapsöl ergänzen (Rapsöl enthält keine nennenswerten Spurenelemente, Vitamin E jedoch ca. 17 mg/100g)
+
+3.  Datenlücken Futtermitteldatenbank
+3.1  Agrobs-Produkte – Spurenelemente fehlen komplett
+Sieben Agrobs-Produkte haben keine Werte für Kupfer, Zink, Selen und Vitamin E. Das führt dazu, dass bei einer typischen Ration mit Wiesencobs oder Wiesenflakes die Spurenelementversorgung massiv unterschätzt wird.
+
+ProduktCu mg/kgZn mg/kgSe mg/kgVit E mg/kgStatusPRE ALPIN Wiesencobs®fehltfehltfehltfehlt?PRE ALPIN Wiesenflakes®fehltfehltfehltfehlt?PRE ALPIN Seniorfehltfehltfehltfehlt?AlpenGrün Müslifehltfehltfehltfehlt?MYO Protein Flakesfehltfehltfehltfehlt?PRE ALPIN Protein Light Flakesfehltfehltfehltfehlt?Luzernecobsfehltfehltfehltfehlt?
+Lösung: Agrobs veröffentlicht detaillierte Analysewerte auf ihrer Website (www.agrobs.de) und im direkten Kontakt. Alternativ können Standardwerte aus dem DLG-Futterwerttabellen-Werk für Gräserfutter als Schätzwerte eingetragen werden.
+
+3.2  St. Hippolyt – zwei Produkte komplett leer
+Glyx-Mash® und MicroVital® haben keine einzigen Nährwertdaten. Diese Produkte können in der Rationsberechnung überhaupt nichts beitragen und werden still zu Null gerechnet. Das ist besonders problematisch bei MicroVital® (einem Mineralfutter), da Mineralfutter typischerweise den Hauptbeitrag zur Spurenelementversorgung leisten.
+• Glyx-Mash®: Energiefutter, St. Hippolyt Webseite oder direkt beim Hersteller anfragen
+• MicroVital®: Mineralfutter – Analysewerte müssen unbedingt eingetragen werden (typisch: >1000 mg Cu/kg, >3000 mg Zn/kg)
+
+3.3  Empfehlung: Datenerfassung strukturieren
+Die größte Hürde beim Einpflegen von Handelsfutterdaten ist, dass Hersteller-Webseiten die Spurenelemente oft nur in Tabellen verstecken oder auf Anfrage herausgeben. Folgende Vorgehensweise hat sich bewährt:
+• Schritt 1: Produktseite des Herstellers aufrufen ? Tab 'Analysegarantie' oder 'Nährwertanalyse'
+• Schritt 2: Falls Spurenelemente fehlen ? direkt per Mail anfragen ('Bitte vollständige Deklaration nach VO (EU) 2017/1017')
+• Schritt 3: Das bereits vorhandene OCR-Modul nutzen – Etikettenfoto machen und importieren
+• Schritt 4: Fehlende Werte mit DLG-Tabellenwerten für den Futtertyp schätzen und als 'Schätzwert' flaggen
+Sinnvoll wäre ein Datenbankfeld 'quelle_vollstaendig' (boolean), damit im UI erkennbar ist, bei welchen Produkten die Analyse noch unvollständig ist.
+
+4.  Lücken in der Bedarfsberechnung
+4.1  Senioren (>20 Jahre) – keine Anpassung
+Alle drei eingetragenen Pferde sind zwischen 19 und 26 Jahre alt. Ab ca. 20 Jahren verändert sich der Nährstoffbedarf erheblich:
+• Verdaulichkeit von Rohprotein sinkt ? RP-Bedarf steigt um 10–20 %
+• Phosphorverfügbarkeit sinkt leicht
+• Vitamin E und C-Bedarf steigt
+• Trockenmasse-Aufnahme sinkt oft durch Zahnprobleme
+
+Vorschlag für bedarfsberechnung.py:
+if p.alter_jahre >= 20:     b.rp_g *= 1.15     b.vit_e_mg *= 1.20     b.trockenmasse_kg *= 0.95
+
+4.2  Hufrehe – NSC-Limit fehlt
+Hufrehe ist in der Liste der möglichen Diagnosen erwähnt (Kommentar in bedarfsberechnung.py), aber es gibt keine Logik dafür. Bei Hufrehe sollte das NSC-Limit identisch zu EMS gesetzt werden:
+• NSC max. 10 % der TS
+• Stärke max. 5–8 % der TS
+• Außerdem: Hinweis auf kontrollierte Weidegangzeiten (Frühmorgens nach Frost am sichersten)
+
+4.3  COPD / Dämpfigkeit
+Bei COPD sind ernährungsphysiologisch keine anderen Bedarfswerte nötig, aber das Futtermanagement ist entscheidend. Sinnvolle Hinweise die das System geben könnte:
+• Heu nur eingeweicht oder als Heucobs anbieten
+• Staub und Schimmel in allen Futtermitteln minimieren
+• Keine trockenen Kraftfutter, keine staubigen Mischungen
+
+4.4  Allergien
+Hier ist das Konzept noch gar nicht ausgearbeitet. Eine pragmatische Lösung wäre ein Freitextfeld für Allergie-Auslöser plus eine Warnlogik, die beim Erstellen einer Ration prüft, ob eines der gewählten Futtermittel den Auslöser enthält. Das erfordert ein neues Datenbankfeld 'inhaltsstoffe_freitext' in der futtermittel-Tabelle.
+
+5.  Weitere Auffälligkeiten
+5.1  Energieformel weicht von GfE-Standard ab
+Die verwendete Formel lautet: E_erh = 0,527 × KGW^0,726
+GfE 2014 (6. Auflage) empfiehlt: E_erh = 0,53 × KGW^0,75
+Der Unterschied ist bei 500 kg: 54,7 MJ vs. 52,5 MJ – also ca. 4 % zu hoch. Für den Eigenbedarf tolerierbar, aber wenn das Programm professionell eingesetzt werden soll, wäre die Korrektur auf den GfE-Standard sinnvoll.
+
+5.2  Heu-Berechnung – Kalium überschätzt
+In rationsrechner.py ist für alle Heu-Qualitäten Kalium mit 20 g/kg TS fest hinterlegt. DLG-Tabellen geben für Wiesenheu 17–22 g/kg TS an – der Wert liegt also am oberen Rand. Für NSC-kritische Pferde (EMS, Cushing) ist Kalium nicht das Problem, aber für eine korrekte Elektrolytbilanz wäre ein realistischerer Mittelwert von 17 g/kg TS besser.
+
+5.3  Testdatensatz in der Datenbank
+Futtermittel-ID 30 heißt '__TEST_MISCH__' und ist komplett leer. Dieser Datensatz sollte vor Produktivnutzung gelöscht werden.
+
+5.4  Tabelle 'bedarfswerte' ist leer
+Die Tabelle existiert im Schema, wird aber nie befüllt. Das bedeutet: berechnete Bedarfswerte werden nicht persistiert. Wenn also ein Pferd-Datensatz geöffnet wird, muss alles neu berechnet werden. Das ist kein Bug (da die Berechnung schnell ist), aber bei einer Historisierung (z. B. Veränderungen über Zeit nachverfolgen) wäre das Befüllen dieser Tabelle nützlich.
+
+6.  Empfohlene Prioritätenliste
+
+PrioDateiMaßnahmeAufwand1bedarfsberechnung.pyRohprotein-Formel korrigieren (2.2 ? 1.4, rf entfernen)30 min2DatenbankRapsöl-Duplikate bereinigen (7 von 8 löschen)15 min3DatenbankAgrobs-Spurenelemente eintragen (Hersteller anfragen oder Webseite)2–4 Std.4DatenbankSt. Hippolyt Glyx-Mash® und MicroVital® vollständig befüllen1–2 Std.5bedarfsberechnung.pySenior-Anpassung (>20 Jahre) ergänzen1 Std.6bedarfsberechnung.pyHufrehe: NSC-Limit identisch zu EMS setzen30 min7bedarfsberechnung.pyEnergieformel auf GfE-Standard korrigieren (^0.75 statt ^0.726)15 min8DatenbankTestdatensatz __TEST_MISCH__ löschen5 min9bedarfsberechnung.pyCOPD: Fütterungshinweise im Ausgabetext ergänzen1 Std.10DatenbankFeld 'daten_vollstaendig' (boolean) für Futtermittel ergänzen2 Std.
+7.  Fazit
+Das Projekt ist für einen Eigenbedarf sehr gut durchdacht. Architektur, Datenbankschema, GfE-Bedarfsformeln für Energie und Mineralstoffe sowie die Krankheitslogik für EMS/PSSM/MIM sind auf einem professionellen Niveau.
+Die zwei dringlichsten Korrekturen – Rohprotein-Formel und Duplikat-Bereinigung – sind in unter einer Stunde erledigt. Danach sind die Ergebnisse für Norbert, Uschi und Bertram schon deutlich realistischer.
+Die Datenlücken bei Agrobs und St. Hippolyt sind der aufwändigste Teil, da diese von der Datenverfügbarkeit der Hersteller abhängen. Das OCR-Importmodul ist dafür ein gutes Werkzeug, das schon vorhanden ist.
+
+Analysiert auf Basis der hochgeladenen Dateien: bedarfsberechnung.py, rationsrechner.py, database.py, main.py, ocr_import.py, export_module.py, rationsrechner.db
